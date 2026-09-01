@@ -1,0 +1,40 @@
+name: mtm
+description: MTM — نظام إدارة فرق الإسعاف التطوعي (Flutter, offline-first, Arabic RTL, mock data).
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+  flutter: ">=3.19.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  flutter_riverpod: ^2.5.1
+  go_router: ^14.2.7
+  intl: ^0.20.2
+  # QR display for MFA setup (no camera, no scanning).
+  qr_flutter: ^4.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  # Bundled font — do NOT swap for google_fonts. This app is offline-first,
+  # google_fonts fetches at runtime and the first launch without network
+  # renders in a fallback face which shifts the whole design.
+  fonts:
+    - family: IBMPlexSansArabic
+      fonts:
+        - asset: assets/fonts/IBMPlexSansArabic-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/IBMPlexSansArabic-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/IBMPlexSansArabic-SemiBold.ttf
+          weight: 600
