@@ -21,3 +21,8 @@ build/
 
 # ---- Claude Code local state ----
 .claude/settings.local.json
+
+# ---- graphify code graph ----
+# The graph is a rebuildable artifact (`graphify update .`), and graph.json
+# runs to several MB. The .graphifyignore that scopes it IS tracked.
+graphify-out/

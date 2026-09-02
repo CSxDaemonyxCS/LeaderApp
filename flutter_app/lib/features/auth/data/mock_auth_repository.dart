@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import '../../../core/access/capability_presets.dart';
 import '../../../core/result/result.dart';
 import '../domain/auth_models.dart';
 import '../domain/auth_repository.dart';
@@ -7,8 +8,38 @@ import '../domain/auth_repository.dart';
 class MockAuthRepository implements AuthRepository {
   MockAuthRepository();
 
-  AuthUser? _me;
+  // ASSUMPTION: the app boots straight into `/home`, so the mock starts with
+  // a signed-in session. Without one every capability check resolves to
+  // `Capabilities.none` and every gated control on every screen would be
+  // hidden, which is not what the mock is meant to demonstrate. Sign-out
+  // still clears it, and sign-in still runs the real code path.
+  AuthUser? _me = _mockUser;
   final _rand = Random(7);
+
+  static final AuthUser _mockUser = AuthUser(
+    id: 'u_1',
+    name: 'ليلى ياسين',
+    email: 'l.yaseen@mtm.org',
+    // TODO(backend): the real grant is issued by the server per user. A
+    // preset is only the starting set an admin picks at account creation —
+    // it is never the user's identity and is never consulted at check time.
+    capabilities: CapabilityPreset.mainAdmin.grant(detachments: _seeded),
+    orgName: 'فريق الإسعاف التطوعي · دمشق',
+    avatarInitials: 'لي',
+  );
+
+  /// The seeded detachment ids from `MockDetachmentRepository`, duplicated
+  /// here rather than imported so the auth mock does not depend on the
+  /// detachment feature. Granting the scoped keys over all of them keeps the
+  /// mock admin able to open every detachment while still exercising the
+  /// per-detachment code path — a global-only grant would never call it.
+  static const _seeded = [
+    'd_dam_central',
+    'd_dam_rural',
+    'd_homs',
+    'd_coast',
+    'd_north_arch',
+  ];
 
   Future<void> _latency() => Future<void>.delayed(
         Duration(milliseconds: 400 + _rand.nextInt(400)),
@@ -23,14 +54,7 @@ class MockAuthRepository implements AuthRepository {
     if (password.length < 4) {
       return const Failure('كلمة المرور قصيرة جدا.');
     }
-    _me = const AuthUser(
-      id: 'u_1',
-      name: 'ليلى ياسين',
-      email: 'l.yaseen@mtm.org',
-      role: UserRole.mainAdmin,
-      orgName: 'فريق الإسعاف التطوعي · دمشق',
-      avatarInitials: 'لي',
-    );
+    _me = _mockUser;
     return Success(_me!);
   }
 
@@ -113,11 +137,11 @@ class MockAuthRepository implements AuthRepository {
     return const Success(null);
   }
 
-  @override
-  Future<Result<List<Session>>> listSessions() async {
-    await _latency();
+  /// Built once so a revoke actually removes a row instead of the list
+  /// reappearing intact on the next read.
+  late final List<Session> _sessions = () {
     final now = DateTime.now();
-    return Success([
+    return [
       Session(
         id: 's_cur',
         device: 'iPhone 15 · Safari',
@@ -142,12 +166,25 @@ class MockAuthRepository implements AuthRepository {
         startedAt: now.subtract(const Duration(days: 3)),
         current: false,
       ),
-    ]);
+    ];
+  }();
+
+  @override
+  Future<Result<List<Session>>> listSessions() async {
+    await _latency();
+    return Success(List.of(_sessions));
   }
 
   @override
   Future<Result<void>> revokeSession(String id) async {
     await _latency();
+    final i = _sessions.indexWhere((s) => s.id == id);
+    if (i < 0) return const Failure('لم يُعثر على الجلسة.', code: 'not_found');
+    if (_sessions[i].current) {
+      return const Failure('لا يمكن إنهاء الجلسة الحالية من هنا.',
+          code: 'validation');
+    }
+    _sessions.removeAt(i);
     return const Success(null);
   }
 }

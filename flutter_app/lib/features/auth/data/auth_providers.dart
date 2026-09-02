@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/result/result.dart';
 import '../domain/auth_models.dart';
 import '../domain/auth_repository.dart';
 import 'mock_auth_repository.dart';
@@ -16,4 +17,8 @@ final currentUserProvider = FutureProvider<AuthUser?>((ref) async {
     failure: (_, __) => null,
     offline: (cached) => cached,
   );
+});
+
+final sessionsProvider = FutureProvider<Result<List<Session>>>((ref) async {
+  return ref.read(authRepositoryProvider).listSessions();
 });

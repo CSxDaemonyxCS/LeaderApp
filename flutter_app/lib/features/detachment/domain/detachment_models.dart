@@ -3,6 +3,7 @@ enum DetachmentStatus { active, archived }
 class Detachment {
   const Detachment({
     required this.id,
+    required this.tenantId,
     required this.name,
     required this.region,
     required this.mainCenter,
@@ -14,6 +15,12 @@ class Detachment {
   });
 
   final String id;
+
+  /// The tenant this detachment belongs to. Every detachment has exactly one;
+  /// there is no unfiled detachment, because the tenant is what a detachment
+  /// is created *inside*.
+  final String tenantId;
+
   final String name;
   final String region;
   final String mainCenter;
@@ -35,6 +42,7 @@ class Detachment {
   }) =>
       Detachment(
         id: id,
+        tenantId: tenantId,
         name: name ?? this.name,
         region: region ?? this.region,
         mainCenter: mainCenter ?? this.mainCenter,
@@ -47,6 +55,7 @@ class Detachment {
 
   factory Detachment.fromJson(Map<String, dynamic> j) => Detachment(
         id: j['id'] as String,
+        tenantId: j['tenantId'] as String,
         name: j['name'] as String,
         region: j['region'] as String,
         mainCenter: j['mainCenter'] as String,
@@ -60,6 +69,7 @@ class Detachment {
 
   Map<String, dynamic> toJson() => {
         'id': id,
+        'tenantId': tenantId,
         'name': name,
         'region': region,
         'mainCenter': mainCenter,

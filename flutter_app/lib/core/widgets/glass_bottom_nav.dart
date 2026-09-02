@@ -180,16 +180,22 @@ class _GlassTab extends StatelessWidget {
         decoration: BoxDecoration(
           color: active ? c.primary : Colors.transparent,
           borderRadius: BorderRadius.circular(AppRadii.pill),
-          boxShadow: active
-              ? [
-                  BoxShadow(
-                    color: c.primary.withValues(alpha: 0.55),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                    spreadRadius: -2,
-                  ),
-                ]
-              : null,
+          // The shadow stays in the decoration in BOTH states and only its
+          // colour fades. `MotionTokens.spring` overshoots past its endpoint
+          // by design, and a blur radius has a hard floor at 0 — animating
+          // this list to `null` makes the deselecting tab lerp its blur
+          // through a negative value, which `dart:ui` asserts on. A constant
+          // blur with a transparent colour looks identical and cannot.
+          boxShadow: [
+            BoxShadow(
+              color: active
+                  ? c.primary.withValues(alpha: 0.55)
+                  : c.primary.withValues(alpha: 0),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+              spreadRadius: -2,
+            ),
+          ],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -204,7 +210,12 @@ class _GlassTab extends StatelessWidget {
               child: AnimatedAlign(
                 duration:
                     effectiveDuration(context, MotionTokens.navPillMorph),
-                curve: MotionTokens.spring,
+                // Same floor problem as the shadow above: a width factor
+                // cannot go below 0. The reveal keeps the spring, because
+                // that overshoot is the pill's signature; the hide uses the
+                // non-overshooting curve so it cannot land on a negative
+                // width and assert.
+                curve: active ? MotionTokens.spring : MotionTokens.emphasized,
                 widthFactor: active ? 1.0 : 0.0,
                 alignment: AlignmentDirectional.centerStart,
                 child: Padding(

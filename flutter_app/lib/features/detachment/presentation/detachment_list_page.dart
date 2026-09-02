@@ -2,25 +2,35 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/access/capability.dart';
+import '../../../core/access/capability_guard.dart';
 import '../../../core/motion/animated_counter.dart';
 import '../../../core/motion/motion_tokens.dart';
 import '../../../core/motion/press_scale.dart';
 import '../../../core/motion/stagger.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/app_typography.dart';
+import '../../../core/widgets/async_result.dart';
 import '../../../core/widgets/empty_state.dart';
-import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/refresh_indicator.dart';
-import '../../../core/widgets/skeleton.dart';
 import '../../../core/widgets/status_chip.dart';
 import '../../../l10n/strings.dart';
 import '../../shell/main_shell.dart';
+import '../../tenant/data/tenant_providers.dart';
+import '../../tenant/domain/tenant_models.dart';
 import '../data/detachment_providers.dart';
 import '../domain/detachment_models.dart';
-import '../../../core/theme/app_typography.dart';
 
+/// The detachments of one tenant.
+///
+/// [tenantId] is null only on the unscoped list — every detachment the
+/// session can see, regardless of tenant. Creating from that screen has no
+/// tenant to create *into*, so the create action only appears when scoped.
 class DetachmentListPage extends ConsumerStatefulWidget {
-  const DetachmentListPage({super.key});
+  const DetachmentListPage({super.key, this.tenantId});
+
+  final String? tenantId;
 
   @override
   ConsumerState<DetachmentListPage> createState() => _S();
@@ -37,24 +47,44 @@ class _S extends ConsumerState<DetachmentListPage> {
     super.dispose();
   }
 
+  String? get _tenantId => widget.tenantId;
+
+  void _openNew() => context.push('/tenant/$_tenantId/detachment/new');
+
   @override
   Widget build(BuildContext context) {
     final c = context.c;
-    final q = DetachmentListQuery(filter: _filter, query: _query);
-    final async = ref.watch(detachmentListProvider(q));
+    final q = DetachmentListQuery(
+      tenantId: _tenantId,
+      filter: _filter,
+      query: _query,
+    );
+    final onCreate = _tenantId == null
+        ? null
+        : ref.whenCan(Cap.detachmentCreate, _openNew);
+
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(
-        title: const Text(S.detachmentListTitle),
+        title: _tenantId == null
+            ? const Text(S.detachmentListTitle)
+            : _TenantTitle(tenantId: _tenantId!),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add_rounded),
-            onPressed: () => context.push('/detachment/new'),
-          ),
+          if (_tenantId != null)
+            IconButton(
+              tooltip: S.editTenant,
+              icon: const Icon(Icons.tune_rounded),
+              onPressed: () => context.push('/tenant/$_tenantId/edit'),
+            ),
+          if (onCreate != null)
+            IconButton(
+              tooltip: S.createDetachment,
+              icon: const Icon(Icons.add_rounded),
+              onPressed: onCreate,
+            ),
         ],
       ),
       body: Column(children: [
-        // Search + filter chips
         Padding(
           padding: const EdgeInsets.fromLTRB(
               AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 0),
@@ -69,16 +99,19 @@ class _S extends ConsumerState<DetachmentListPage> {
             ),
             const SizedBox(height: AppSpacing.sm),
             Row(children: [
-              _Filter(label: S.filterAll,
+              _Filter(
+                  label: S.filterAll,
                   active: _filter == null,
                   onTap: () => setState(() => _filter = null)),
               const SizedBox(width: 8),
-              _Filter(label: S.filterActive,
+              _Filter(
+                  label: S.filterActive,
                   active: _filter == DetachmentStatus.active,
                   onTap: () =>
                       setState(() => _filter = DetachmentStatus.active)),
               const SizedBox(width: 8),
-              _Filter(label: S.filterArchived,
+              _Filter(
+                  label: S.filterArchived,
                   active: _filter == DetachmentStatus.archived,
                   onTap: () =>
                       setState(() => _filter = DetachmentStatus.archived)),
@@ -87,27 +120,11 @@ class _S extends ConsumerState<DetachmentListPage> {
         ),
         Expanded(
           child: AppRefreshIndicator(
-            onRefresh: () async =>
-                ref.refresh(detachmentListProvider(q).future),
-            child: async.when(
-              loading: () => const SkeletonList(),
-              error: (e, _) => ErrorStateView(
-                onRetry: () => ref.invalidate(detachmentListProvider),
-              ),
-              data: (r) => r.when(
-                success: (data, {stale = false}) => _list(data),
-                failure: (m, _) => ErrorStateView(
-                  body: m,
-                  onRetry: () => ref.invalidate(detachmentListProvider),
-                ),
-                offline: (cached) => cached == null
-                    ? const EmptyState(
-                        icon: Icons.cloud_off_rounded,
-                        title: S.offlineTitle,
-                        body: 'لا نسخة محفوظة.',
-                      )
-                    : _list(cached),
-              ),
+            onRefresh: () => ref.refresh(detachmentListProvider(q).future),
+            child: AsyncResultView<List<Detachment>>(
+              value: ref.watch(detachmentListProvider(q)),
+              onRetry: () => ref.invalidate(detachmentListProvider),
+              builder: (context, items, stale) => _list(items, onCreate),
             ),
           ),
         ),
@@ -115,14 +132,15 @@ class _S extends ConsumerState<DetachmentListPage> {
     );
   }
 
-  Widget _list(List<Detachment> items) {
+  Widget _list(List<Detachment> items, VoidCallback? onCreate) {
     if (items.isEmpty) {
+      final scoped = _tenantId != null;
       return EmptyState(
         icon: Icons.flag_outlined,
-        title: S.emptyDetachments,
-        body: S.emptyDetachmentsSub,
-        actionLabel: S.createDetachment,
-        onAction: () => context.push('/detachment/new'),
+        title: scoped ? S.tenantEmptyDetachments : S.emptyDetachments,
+        body: scoped ? S.tenantEmptyDetachmentsSub : S.emptyDetachmentsSub,
+        actionLabel: onCreate == null ? null : S.createDetachment,
+        onAction: onCreate,
       );
     }
     return FloatingNavPadding(
@@ -139,8 +157,42 @@ class _S extends ConsumerState<DetachmentListPage> {
   }
 }
 
+/// The tenant's name as the screen title, so the container the list belongs
+/// to is never in doubt. Falls back to the generic title while it loads
+/// rather than to an empty app bar.
+class _TenantTitle extends ConsumerWidget {
+  const _TenantTitle({required this.tenantId});
+
+  final String tenantId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.c;
+    final name = ref.watch(tenantByIdProvider(tenantId)).whenOrNull(
+              data: (r) => r.when(
+                success: (Tenant t, {bool stale = false}) => t.name,
+                failure: (_, __) => null,
+                offline: (cached) => cached?.name,
+              ),
+            ) ??
+        S.tenantsTitle;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(name,
+            style: Theme.of(context).appBarTheme.titleTextStyle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis),
+        Text(S.detachments, style: TextStyle(color: c.ink3, fontSize: 12)),
+      ],
+    );
+  }
+}
+
 class _Filter extends StatelessWidget {
-  const _Filter({required this.label, required this.active, required this.onTap});
+  const _Filter(
+      {required this.label, required this.active, required this.onTap});
   final String label;
   final bool active;
   final VoidCallback onTap;
@@ -151,8 +203,8 @@ class _Filter extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: effectiveDuration(context, MotionTokens.short),
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md, vertical: 6),
+        padding:
+            const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 6),
         decoration: BoxDecoration(
           color: active ? c.primary : c.surface,
           border: Border.all(color: active ? c.primary : c.line2),
@@ -174,10 +226,12 @@ class _Filter extends StatelessWidget {
 class _DetachmentCard extends StatelessWidget {
   const _DetachmentCard({required this.d});
   final Detachment d;
+
   @override
   Widget build(BuildContext context) {
     final c = context.c;
     final t = Theme.of(context).textTheme;
+    final archived = d.status == DetachmentStatus.archived;
     final coverageTone = d.coveragePercent >= 85
         ? StatusKind.ok
         : d.coveragePercent >= 70
@@ -188,7 +242,8 @@ class _DetachmentCard extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: PressScale(
-          onTap: () => GoRouter.of(context).push('/detachment/${d.id}/team'),
+          onTap: () =>
+              GoRouter.of(context).push('/detachment/${d.id}/team'),
           borderRadius: BorderRadius.circular(AppRadii.lg),
           child: Container(
             padding: const EdgeInsets.all(AppSpacing.md),
@@ -202,12 +257,14 @@ class _DetachmentCard extends StatelessWidget {
               children: [
                 Row(children: [
                   Container(
-                    width: 40, height: 40,
+                    width: 40,
+                    height: 40,
                     decoration: BoxDecoration(
-                      color: c.primaryTint,
+                      color: archived ? c.mutedTint : c.primaryTint,
                       borderRadius: BorderRadius.circular(AppRadii.md),
                     ),
-                    child: Icon(Icons.flag_rounded, color: c.primary),
+                    child: Icon(Icons.flag_rounded,
+                        color: archived ? c.ink3 : c.primary),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -219,24 +276,31 @@ class _DetachmentCard extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis),
                         Text('${d.region} · ${d.mainCenter}',
-                            style: TextStyle(
-                                color: c.ink3, fontSize: 12)),
+                            style: TextStyle(color: c.ink3, fontSize: 12)),
                       ],
                     ),
                   ),
                   StatusChip(
-                    kind: coverageTone,
-                    label: '${toArabicIndic(d.coveragePercent.toString())}٪',
+                    kind: archived ? StatusKind.muted : coverageTone,
+                    label: archived
+                        ? S.statusArchived
+                        : '${toArabicIndic(d.coveragePercent.toString())}٪',
                   ),
                 ]),
                 const SizedBox(height: AppSpacing.md),
-                Row(children: [
-                  _mini(context, S.memberCount,
-                      toArabicIndic(d.memberCount.toString())),
-                  const SizedBox(width: AppSpacing.lg),
-                  _mini(context, S.shiftCount,
-                      toArabicIndic(d.weeklyShiftCount.toString())),
-                ]),
+                // Wrap, not Row: "الشفتات هذا الأسبوع" plus a member count
+                // does not fit one line on a narrow phone, and a clipped
+                // figure is worse than a second line.
+                Wrap(
+                  spacing: AppSpacing.lg,
+                  runSpacing: AppSpacing.xs,
+                  children: [
+                    _mini(context, S.memberCount,
+                        toArabicIndic(d.memberCount.toString())),
+                    _mini(context, S.shiftCount,
+                        toArabicIndic(d.weeklyShiftCount.toString())),
+                  ],
+                ),
               ],
             ),
           ),
@@ -250,8 +314,7 @@ class _DetachmentCard extends StatelessWidget {
     return Row(children: [
       Text(label, style: TextStyle(color: c.ink3, fontSize: 12)),
       const SizedBox(width: 6),
-      Text(value,
-          style: AppTypography.digits(c.ink, size: 14)),
+      Text(value, style: AppTypography.digits(c.ink, size: 14)),
     ]);
   }
 }

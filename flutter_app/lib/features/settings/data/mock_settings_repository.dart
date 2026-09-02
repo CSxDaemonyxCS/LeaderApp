@@ -59,8 +59,8 @@ class MockSettingsRepository implements SettingsRepository {
       legalName: 'جمعية الإسعاف الأهلي التطوعية',
       address: 'دمشق, سوريا',
       emailPublic: 'contact@mtm.org',
-      detachmentCount: 4,
-      memberCount: 111,
+      detachmentCount: 5,
+      memberCount: 25,
     ));
   }
 }

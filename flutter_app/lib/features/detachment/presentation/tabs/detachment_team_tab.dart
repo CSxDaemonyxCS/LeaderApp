@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../core/access/capability.dart';
+import '../../../../core/access/capability_guard.dart';
+import '../../../../core/motion/animated_counter.dart';
 import '../../../../core/motion/press_scale.dart';
 import '../../../../core/motion/stagger.dart';
 import '../../../../core/theme/app_palette.dart';
@@ -8,7 +12,6 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/refresh_indicator.dart';
-import '../../../../core/widgets/sheet_scaffold.dart';
 import '../../../../core/widgets/skeleton.dart';
 import '../../../../core/widgets/status_chip.dart';
 import '../../../../l10n/strings.dart';
@@ -16,6 +19,12 @@ import '../../../shell/main_shell.dart';
 import '../../../team/data/team_providers.dart';
 import '../../../team/domain/team_models.dart';
 
+/// The detachment's roster: who is on it, and what each of them is.
+///
+/// A row carries the two things that identify a member on a roster — their
+/// name and their role. Their department and their own number are part of
+/// the record rather than part of the scan, so they live on the member's
+/// form, one tap away.
 class DetachmentTeamTab extends ConsumerWidget {
   const DetachmentTeamTab({super.key, required this.detachmentId});
   final String detachmentId;
@@ -46,61 +55,123 @@ class DetachmentTeamTab extends ConsumerWidget {
     );
   }
 
+  void _openNew(BuildContext context) =>
+      context.push('/detachment/$detachmentId/member/new');
+
+  void _openMember(BuildContext context, TeamMember m) =>
+      context.push('/detachment/$detachmentId/member/${m.id}/edit');
+
   Widget _body(BuildContext context, WidgetRef ref, List<TeamMember> members) {
+    // Adding is gated, and the gate is the same one the form resolves
+    // against — an "add" that opens a page whose save button is dead is
+    // worse than no "add" at all.
+    final onAdd = ref.whenCan(
+      Cap.memberInvite,
+      () => _openNew(context),
+      detachmentId: detachmentId,
+    );
+
     if (members.isEmpty) {
       return EmptyState(
         icon: Icons.group_outlined,
         title: S.emptyTeam,
         body: S.emptyTeamSub,
-        actionLabel: S.addMember,
-        onAction: () {},
+        actionLabel: onAdd == null ? null : S.addMember,
+        onAction: onAdd,
       );
     }
+
     return FloatingNavPadding(
       child: ListView.separated(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        itemCount: members.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (context, i) => Stagger(
-          index: i,
-          child: _MemberCard(
-            member: members[i],
-            onChangeRole: () => _changeRoleSheet(context, ref, members[i]),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _changeRoleSheet(
-      BuildContext context, WidgetRef ref, TeamMember m) async {
-    await showAppSheet<void>(
-      context: context,
-      title: S.changeRole,
-      child: _RolePicker(
-        current: m.role,
-        onPick: (role) async {
-          await ref
-              .read(teamRepositoryProvider)
-              .assignRole(m.id, role);
-          ref.invalidate(teamListProvider);
-          if (context.mounted) Navigator.of(context).pop();
+        padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.lg),
+        // One extra row for the header, which carries the roster count and
+        // the add action.
+        itemCount: members.length + 1,
+        separatorBuilder: (_, i) =>
+            SizedBox(height: i == 0 ? AppSpacing.md : 10),
+        itemBuilder: (context, i) {
+          if (i == 0) {
+            return _RosterHeader(count: members.length, onAdd: onAdd);
+          }
+          final m = members[i - 1];
+          return Stagger(
+            index: i - 1,
+            child: _MemberCard(
+              member: m,
+              onTap: () => _openMember(context, m),
+            ),
+          );
         },
       ),
     );
   }
 }
 
+/// Roster count on one side, the add action on the other. The count is real
+/// information — how big this detachment is — rather than a decorative title.
+class _RosterHeader extends StatelessWidget {
+  const _RosterHeader({required this.count, required this.onAdd});
+
+  final int count;
+  final VoidCallback? onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.c;
+    return Row(children: [
+      Expanded(
+        child: Text(
+          '${S.memberCount} · ${toArabicIndic(count.toString())}',
+          style: TextStyle(
+            color: c.ink3,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.6,
+          ),
+        ),
+      ),
+      if (onAdd != null)
+        PressScale(
+          onTap: onAdd,
+          borderRadius: BorderRadius.circular(AppRadii.pill),
+          child: Container(
+            padding: const EdgeInsetsDirectional.fromSTEB(
+                AppSpacing.md, AppSpacing.sm, AppSpacing.lg, AppSpacing.sm),
+            decoration: BoxDecoration(
+              color: c.primaryTint,
+              borderRadius: BorderRadius.circular(AppRadii.pill),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.add_rounded, size: 18, color: c.primary),
+              const SizedBox(width: 6),
+              Text(
+                S.addMember,
+                style: TextStyle(
+                  color: c.primary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ]),
+          ),
+        ),
+    ]);
+  }
+}
+
 class _MemberCard extends StatelessWidget {
-  const _MemberCard({required this.member, required this.onChangeRole});
+  const _MemberCard({required this.member, required this.onTap});
+
   final TeamMember member;
-  final VoidCallback onChangeRole;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final c = context.c;
     return PressScale(
-      onTap: onChangeRole,
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadii.lg),
       child: Container(
         padding: const EdgeInsets.all(AppSpacing.md),
         decoration: BoxDecoration(
@@ -120,7 +191,7 @@ class _MemberCard extends StatelessWidget {
                         color: c.ink,
                         fontSize: 15,
                         fontWeight: FontWeight.w500)),
-                const SizedBox(height: 2),
+                const SizedBox(height: 3),
                 _RoleChip(role: member.role),
               ],
             ),
@@ -198,55 +269,6 @@ class _Avatar extends StatelessWidget {
       child: Text(initials,
           style: TextStyle(
               color: fg, fontSize: 14, fontWeight: FontWeight.w600)),
-    );
-  }
-}
-
-class _RolePicker extends StatelessWidget {
-  const _RolePicker({required this.current, required this.onPick});
-  final TeamRole current;
-  final ValueChanged<TeamRole> onPick;
-  @override
-  Widget build(BuildContext context) {
-    final c = context.c;
-    final roles = [
-      (TeamRole.lead, S.roleLead, Icons.workspace_premium_rounded),
-      (TeamRole.medic, S.roleMedic, Icons.medical_services_rounded),
-      (TeamRole.trainee, S.roleTrainee, Icons.school_rounded),
-      (TeamRole.volunteer, S.roleVolunteer, Icons.volunteer_activism_rounded),
-    ];
-    return ListView.separated(
-      shrinkWrap: true,
-      padding: const EdgeInsets.all(AppSpacing.md),
-      itemCount: roles.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (context, i) {
-        final (r, label, icon) = roles[i];
-        final selected = r == current;
-        return PressScale(
-          onTap: () => onPick(r),
-          child: Container(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              color: selected ? c.primaryTint : c.surface,
-              border: Border.all(color: selected ? c.primary : c.line),
-              borderRadius: BorderRadius.circular(AppRadii.lg),
-            ),
-            child: Row(children: [
-              Icon(icon, color: selected ? c.primary : c.ink2),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(label,
-                    style: TextStyle(
-                        color: selected ? c.primary : c.ink,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500)),
-              ),
-              if (selected) Icon(Icons.check_rounded, color: c.primary),
-            ]),
-          ),
-        );
-      },
     );
   }
 }

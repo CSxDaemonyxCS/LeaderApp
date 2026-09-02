@@ -4,11 +4,16 @@ import '../../../core/result/result.dart';
 import '../domain/inventory_models.dart';
 import '../domain/inventory_repository.dart';
 
+/// In-memory stock. Every active detachment carries items, including at least
+/// one low and one expiring line, so the Storage tab is never blank and the
+/// warning styles are always exercised.
 class MockInventoryRepository implements InventoryRepository {
   MockInventoryRepository();
+
   final _rand = Random(41);
 
   final List<InventoryItem> _items = [
+    // ---- d_dam_central ----
     InventoryItem(
       id: 'i1', detachmentId: 'd_dam_central',
       name: 'أدرينالين ١ ملغ/مل', unit: 'أمبولة',
@@ -44,6 +49,8 @@ class MockInventoryRepository implements InventoryRepository {
       expiresOn: DateTime.now().add(const Duration(days: 300)),
       level: StockLevel.ok,
     ),
+
+    // ---- d_dam_rural ----
     const InventoryItem(
       id: 'i6', detachmentId: 'd_dam_rural',
       name: 'كمّامة N95', unit: 'قطعة',
@@ -51,12 +58,74 @@ class MockInventoryRepository implements InventoryRepository {
       expiresOn: null,
       level: StockLevel.ok,
     ),
+    InventoryItem(
+      id: 'i7', detachmentId: 'd_dam_rural',
+      name: 'محلول ملحي ٠٫٩٪', unit: 'كيس',
+      currentStock: 9, minimum: 18,
+      expiresOn: DateTime.now().add(const Duration(days: 45)),
+      level: StockLevel.low,
+    ),
+    const InventoryItem(
+      id: 'i8', detachmentId: 'd_dam_rural',
+      name: 'قفازات معقّمة — قياس M', unit: 'علبة',
+      currentStock: 14, minimum: 8,
+      expiresOn: null,
+      level: StockLevel.ok,
+    ),
+
+    // ---- d_homs ----
+    InventoryItem(
+      id: 'i9', detachmentId: 'd_homs',
+      name: 'أتروبين ١ ملغ', unit: 'أمبولة',
+      currentStock: 2, minimum: 8,
+      expiresOn: DateTime.now().add(const Duration(days: 6)),
+      level: StockLevel.low,
+    ),
+    const InventoryItem(
+      id: 'i10', detachmentId: 'd_homs',
+      name: 'ضمادة ضاغطة', unit: 'قطعة',
+      currentStock: 40, minimum: 20,
+      expiresOn: null,
+      level: StockLevel.ok,
+    ),
+    InventoryItem(
+      id: 'i11', detachmentId: 'd_homs',
+      name: 'ليدوكائين ٢٪', unit: 'أمبولة',
+      currentStock: 0, minimum: 5,
+      expiresOn: DateTime.now().add(const Duration(days: 200)),
+      level: StockLevel.empty,
+    ),
+
+    // ---- d_coast ----
+    const InventoryItem(
+      id: 'i12', detachmentId: 'd_coast',
+      name: 'جبيرة رقبة قابلة للتعديل', unit: 'قطعة',
+      currentStock: 11, minimum: 6,
+      expiresOn: null,
+      level: StockLevel.ok,
+    ),
+    InventoryItem(
+      id: 'i13', detachmentId: 'd_coast',
+      name: 'أكسجين محمول ٢ لتر', unit: 'أسطوانة',
+      currentStock: 3, minimum: 4,
+      expiresOn: DateTime.now().add(const Duration(days: 400)),
+      level: StockLevel.low,
+    ),
+    InventoryItem(
+      id: 'i14', detachmentId: 'd_coast',
+      name: 'شريط قياس سكر الدم', unit: 'علبة',
+      currentStock: 7, minimum: 5,
+      expiresOn: DateTime.now().add(const Duration(days: 14)),
+      level: StockLevel.ok,
+    ),
+
+    // d_north_arch is archived and holds no stock.
   ];
 
   final List<InventoryMovement> _movements = [
     InventoryMovement(id: 'mv1', itemId: 'i1',
         direction: MovementDirection.outflow,
-        quantity: 2, reason: 'طوارئ · ٢ أغسطس',
+        quantity: 2, reason: 'طوارئ · شفت ١٤–٢٠',
         at: DateTime.now().subtract(const Duration(days: 3))),
     InventoryMovement(id: 'mv2', itemId: 'i1',
         direction: MovementDirection.inflow,
@@ -66,11 +135,37 @@ class MockInventoryRepository implements InventoryRepository {
         direction: MovementDirection.outflow,
         quantity: 4, reason: 'صرف ورشة',
         at: DateTime.now().subtract(const Duration(days: 1))),
+    InventoryMovement(id: 'mv4', itemId: 'i4',
+        direction: MovementDirection.outflow,
+        quantity: 6, reason: 'نوبة ربو · مركز الشعلان',
+        at: DateTime.now().subtract(const Duration(days: 2))),
+    InventoryMovement(id: 'mv5', itemId: 'i7',
+        direction: MovementDirection.outflow,
+        quantity: 9, reason: 'إسعاف ميداني · داريا',
+        at: DateTime.now().subtract(const Duration(days: 4))),
+    InventoryMovement(id: 'mv6', itemId: 'i9',
+        direction: MovementDirection.inflow,
+        quantity: 4, reason: 'تبرّع صيدلية الوعر',
+        at: DateTime.now().subtract(const Duration(days: 7))),
+    InventoryMovement(id: 'mv7', itemId: 'i13',
+        direction: MovementDirection.outflow,
+        quantity: 1, reason: 'نقل مريض إلى المشفى',
+        at: DateTime.now().subtract(const Duration(hours: 20))),
   ];
 
+  int _nextItem = 15;
+
   Future<void> _latency() => Future<void>.delayed(
-        Duration(milliseconds: 400 + _rand.nextInt(400)),
+        Duration(milliseconds: 280 + _rand.nextInt(340)),
       );
+
+  /// One rule for the three level values, applied everywhere stock changes,
+  /// so a level can never disagree with the quantity beside it.
+  static StockLevel _levelFor(int stock, int minimum) => stock == 0
+      ? StockLevel.empty
+      : stock < minimum
+          ? StockLevel.low
+          : StockLevel.ok;
 
   @override
   Future<Result<List<InventoryItem>>> listForDetachment(String detachmentId) async {
@@ -81,14 +176,104 @@ class MockInventoryRepository implements InventoryRepository {
   @override
   Future<Result<InventoryItem>> byId(String id) async {
     await _latency();
-    final it = _items.firstWhere((e) => e.id == id, orElse: () => _items.first);
-    return Success(it);
+    final i = _items.indexWhere((e) => e.id == id);
+    // Never fall back to another detachment's item.
+    if (i < 0) return const Failure('لم يُعثر على الصنف.', code: 'not_found');
+    return Success(_items[i]);
   }
 
   @override
   Future<Result<List<InventoryMovement>>> movementsForItem(String itemId) async {
     await _latency();
-    return Success(_movements.where((m) => m.itemId == itemId).toList());
+    final out = _movements.where((m) => m.itemId == itemId).toList()
+      ..sort((a, b) => b.at.compareTo(a.at));
+    return Success(out);
+  }
+
+  @override
+  Future<Result<InventoryItem>> create({
+    required String detachmentId,
+    required String name,
+    required String unit,
+    required int openingStock,
+    required int minimum,
+    DateTime? expiresOn,
+  }) async {
+    await _latency();
+    if (name.trim().isEmpty || unit.trim().isEmpty) {
+      return const Failure('الاسم والوحدة مطلوبان.', code: 'validation');
+    }
+    if (openingStock < 0 || minimum < 0) {
+      return const Failure('أدخل رقما صحيحا.', code: 'validation');
+    }
+    final item = InventoryItem(
+      id: 'i${_nextItem++}',
+      detachmentId: detachmentId,
+      name: name.trim(),
+      unit: unit.trim(),
+      currentStock: openingStock,
+      minimum: minimum,
+      expiresOn: expiresOn,
+      level: _levelFor(openingStock, minimum),
+    );
+    _items.add(item);
+    if (openingStock > 0) {
+      // The opening quantity is a real inflow. Without it the item's first
+      // number has no movement behind it, and the history reads as if the
+      // stock appeared on its own.
+      _movements.add(InventoryMovement(
+        id: 'mv_${DateTime.now().millisecondsSinceEpoch}',
+        itemId: item.id,
+        direction: MovementDirection.inflow,
+        quantity: openingStock,
+        reason: 'رصيد افتتاحي',
+        at: DateTime.now(),
+      ));
+    }
+    return Success(item);
+  }
+
+  @override
+  Future<Result<InventoryItem>> update({
+    required String id,
+    required String name,
+    required String unit,
+    required int minimum,
+    DateTime? expiresOn,
+  }) async {
+    await _latency();
+    final i = _items.indexWhere((e) => e.id == id);
+    if (i < 0) return const Failure('لم يُعثر على الصنف.', code: 'not_found');
+    if (name.trim().isEmpty || unit.trim().isEmpty) {
+      return const Failure('الاسم والوحدة مطلوبان.', code: 'validation');
+    }
+    if (minimum < 0) {
+      return const Failure('أدخل رقما صحيحا.', code: 'validation');
+    }
+    final current = _items[i];
+    _items[i] = InventoryItem(
+      id: current.id,
+      detachmentId: current.detachmentId,
+      name: name.trim(),
+      unit: unit.trim(),
+      currentStock: current.currentStock,
+      minimum: minimum,
+      expiresOn: expiresOn,
+      // Raising the minimum can turn a healthy line into a low one, so the
+      // level is recomputed rather than carried over.
+      level: _levelFor(current.currentStock, minimum),
+    );
+    return Success(_items[i]);
+  }
+
+  @override
+  Future<Result<void>> delete(String id) async {
+    await _latency();
+    final i = _items.indexWhere((e) => e.id == id);
+    if (i < 0) return const Failure('لم يُعثر على الصنف.', code: 'not_found');
+    _items.removeAt(i);
+    _movements.removeWhere((m) => m.itemId == id);
+    return const Success(null);
   }
 
   @override
@@ -100,15 +285,22 @@ class MockInventoryRepository implements InventoryRepository {
   }) async {
     await _latency();
     final i = _items.indexWhere((e) => e.id == itemId);
-    if (i < 0) return const Failure('لم يُعثر على الصنف.');
+    if (i < 0) return const Failure('لم يُعثر على الصنف.', code: 'not_found');
+    if (quantity <= 0) {
+      return const Failure('الكمية يجب أن تكون أكبر من صفر.',
+          code: 'validation');
+    }
+    if (direction == MovementDirection.outflow &&
+        quantity > _items[i].currentStock) {
+      return const Failure('الكمية المطلوبة أكبر من المخزون الحالي.',
+          code: 'validation');
+    }
     final delta = direction == MovementDirection.inflow ? quantity : -quantity;
     final newStock = (_items[i].currentStock + delta).clamp(0, 99999);
-    final level = newStock == 0
-        ? StockLevel.empty
-        : newStock < _items[i].minimum
-            ? StockLevel.low
-            : StockLevel.ok;
-    _items[i] = _items[i].copyWith(currentStock: newStock, level: level);
+    _items[i] = _items[i].copyWith(
+      currentStock: newStock,
+      level: _levelFor(newStock, _items[i].minimum),
+    );
     _movements.add(InventoryMovement(
       id: 'mv_${DateTime.now().millisecondsSinceEpoch}',
       itemId: itemId,

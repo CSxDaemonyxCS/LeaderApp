@@ -126,3 +126,20 @@ String toArabicIndic(String s) {
   }
   return buf.toString();
 }
+
+/// The inverse: fold Arabic-Indic digits back to Western.
+///
+/// The UI reads and writes Arabic-Indic, but a number that will be stored,
+/// compared, or sent to a backend has to be canonical first — otherwise
+/// "١٠١" and "101" are two different member numbers.
+String toWesternDigits(String s) {
+  const map = {
+    '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
+    '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9',
+  };
+  final buf = StringBuffer();
+  for (final ch in s.split('')) {
+    buf.write(map[ch] ?? ch);
+  }
+  return buf.toString();
+}

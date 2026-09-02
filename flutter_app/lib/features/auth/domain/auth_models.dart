@@ -2,14 +2,14 @@
 /// only mock data exists — this is the wire format the real API will use.
 library;
 
-enum UserRole { superAdmin, mainAdmin, simpleAdmin, volunteer }
+import '../../../core/access/capability.dart';
 
 class AuthUser {
   const AuthUser({
     required this.id,
     required this.name,
     required this.email,
-    required this.role,
+    required this.capabilities,
     required this.orgName,
     this.avatarInitials,
   });
@@ -17,7 +17,16 @@ class AuthUser {
   final String id;
   final String name;
   final String email;
-  final UserRole role;
+
+  /// What this session may do.
+  ///
+  /// This replaced `enum UserRole { superAdmin, mainAdmin, simpleAdmin,
+  /// volunteer }` on 2026-09-02. Capabilities are runtime data the server
+  /// grants per user, so two Main Admins can differ; a role enum cannot
+  /// express that. Roles survive only as presets at grant time — see
+  /// `core/access/capability_presets.dart` and `CAPABILITIES.md`.
+  final Capabilities capabilities;
+
   final String orgName;
   final String? avatarInitials;
 
@@ -25,7 +34,9 @@ class AuthUser {
         id: j['id'] as String,
         name: j['name'] as String,
         email: j['email'] as String,
-        role: UserRole.values.firstWhere((r) => r.name == j['role']),
+        capabilities: Capabilities.fromJson(
+          (j['capabilities'] as Map<String, dynamic>?) ?? const {},
+        ),
         orgName: j['orgName'] as String,
         avatarInitials: j['avatarInitials'] as String?,
       );
@@ -34,7 +45,7 @@ class AuthUser {
         'id': id,
         'name': name,
         'email': email,
-        'role': role.name,
+        'capabilities': capabilities.toJson(),
         'orgName': orgName,
         if (avatarInitials != null) 'avatarInitials': avatarInitials,
       };

@@ -1,0 +1,83 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+import 'package:mtm/core/router/app_router.dart';
+
+/// Every location the app can actually reach, by feature.
+///
+/// The interesting ones are the two `:id/edit` forms: they render on the root
+/// navigator so they cover the bottom nav, which means they must stay siblings
+/// of their detail `ShellRoute` rather than children of it. Nesting them
+/// inside the shell trips a go_router assert while GoRouter is being built —
+/// the app then dies on a red screen before its first frame instead of failing
+/// on the edit screen, which is why this is a router test and not a UI one.
+const _locations = <String>[
+  '/login',
+  '/mfa-setup',
+  '/mfa-challenge',
+  '/forgot',
+  '/otp',
+  '/new-password',
+  '/session-expired',
+  '/new-device',
+  '/home',
+  // Tenants are the container above detachments, so creating a detachment
+  // happens inside one and there is no unparented `/detachment/new`.
+  '/tenant',
+  '/tenant/new',
+  '/tenant/t1/edit',
+  '/tenant/t1',
+  '/tenant/t1/detachment/new',
+  '/detachment',
+  '/detachment/d1/edit',
+  '/detachment/d1/member/new',
+  '/detachment/d1/member/m1/edit',
+  '/detachment/d1/team',
+  '/detachment/d1/shifts',
+  '/detachment/d1/storage',
+  '/detachment/d1/stats',
+  '/detachment/d1/storage/new',
+  '/detachment/d1/storage/i1/edit',
+  '/detachment/d1/report',
+  '/detachment/d1/report/preview',
+  '/workshop',
+  '/workshop/new',
+  '/workshop/w1/edit',
+  '/workshop/w1/team',
+  '/workshop/w1/members',
+  '/workshop/w1/stats',
+  '/more',
+  '/more/profile',
+  '/more/security',
+  '/more/notifications',
+  '/more/org',
+];
+
+GoRouter _buildRouter() {
+  final container = ProviderContainer();
+  addTearDown(container.dispose);
+  return container.read(appRouterProvider);
+}
+
+void main() {
+  test('the router can be constructed', () {
+    expect(_buildRouter(), isA<GoRouter>());
+  });
+
+  test('every location resolves to a route', () {
+    final router = _buildRouter();
+    for (final location in _locations) {
+      final match = router.configuration.findMatch(Uri.parse(location));
+      expect(match.isError, isFalse, reason: '$location did not match');
+      expect(match.uri.toString(), location);
+    }
+  });
+
+  test('an unknown location does not match', () {
+    final router = _buildRouter();
+    expect(
+      router.configuration.findMatch(Uri.parse('/detachment/d1/nope')).isError,
+      isTrue,
+    );
+  });
+}

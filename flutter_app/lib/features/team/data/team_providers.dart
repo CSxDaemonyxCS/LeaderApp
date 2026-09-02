@@ -13,3 +13,9 @@ final teamListProvider =
     FutureProvider.family<Result<List<TeamMember>>, String>((ref, detId) async {
   return ref.read(teamRepositoryProvider).listForDetachment(detId);
 });
+
+/// One member, for the edit form. Family key is the member id.
+final memberByIdProvider =
+    FutureProvider.family<Result<TeamMember>, String>((ref, memberId) async {
+  return ref.read(teamRepositoryProvider).byId(memberId);
+});

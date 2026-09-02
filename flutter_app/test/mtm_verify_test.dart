@@ -52,7 +52,7 @@ void main() {
 
   testWidgets('plain Text: Arabic-Indic digits are proportional (the bug)',
       (tester) async {
-    await tester.pumpWidget(_app(Column(children: const [
+    await tester.pumpWidget(_app(const Column(children: [
       Text('٨٨', key: Key('a'), style: style),
       Text('١١', key: Key('b'), style: style),
     ])));
@@ -64,7 +64,7 @@ void main() {
 
   testWidgets('TabularDigits: every digit occupies the same cell',
       (tester) async {
-    await tester.pumpWidget(_app(Column(children: const [
+    await tester.pumpWidget(_app(const Column(children: [
       TabularDigits('٨٨', key: Key('a'), style: style),
       TabularDigits('١١', key: Key('b'), style: style),
       TabularDigits('٠٩', key: Key('c'), style: style),

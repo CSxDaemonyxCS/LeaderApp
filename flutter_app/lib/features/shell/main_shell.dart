@@ -13,7 +13,7 @@ class MainShell extends StatelessWidget {
   Widget build(BuildContext context) {
     const destinations = [
       GlassNavDestination(icon: Icons.home_rounded, label: S.navHome),
-      GlassNavDestination(icon: Icons.flag_rounded, label: S.navDetachment),
+      GlassNavDestination(icon: Icons.flag_rounded, label: S.navTenants),
       GlassNavDestination(icon: Icons.school_rounded, label: S.navWorkshop),
       GlassNavDestination(icon: Icons.more_horiz_rounded, label: S.navMore),
     ];
