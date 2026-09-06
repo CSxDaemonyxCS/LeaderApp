@@ -2,14 +2,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/result/result.dart';
 import '../../team/data/team_providers.dart';
+import '../domain/shift_conflict_snapshot.dart';
 import '../domain/shift_models.dart';
 import '../domain/shift_repository.dart';
+import 'in_memory_shift_conflict_snapshot_store.dart';
 import 'mock_shift_repository.dart';
 
 final shiftRepositoryProvider = Provider<ShiftRepository>((ref) {
   // The mock resolves assignments against the same roster the Members tab
   // reads, so the two screens can never disagree about who exists.
   return MockShiftRepository(ref.watch(teamRepositoryProvider));
+});
+
+/// Where the current-as-of-detection snapshot for a conflicted shift write
+/// is kept. Override with a real (encrypted-DB backed) store in a shipping
+/// build — see `ShiftConflictSnapshotStore`'s own doc comment.
+final shiftConflictSnapshotStoreProvider =
+    Provider<ShiftConflictSnapshotStore>((ref) {
+  return InMemoryShiftConflictSnapshotStore();
 });
 
 /// Cache key for one week of one detachment's schedule.
@@ -44,9 +54,8 @@ class WeekQuery {
 /// Family state, not a single global — a week picked in one detachment must
 /// not be sitting there when another opens (`DETACHMENT-SCOPING.md` §2,
 /// rule 3).
-final selectedWeekProvider =
-    StateProvider.autoDispose.family<DateTime, String>(
-        (ref, detachmentId) => startOfWeek(DateTime.now()));
+final selectedWeekProvider = StateProvider.autoDispose.family<DateTime, String>(
+    (ref, detachmentId) => startOfWeek(DateTime.now()));
 
 /// The selected day inside that week, as an offset 0–6 from Saturday.
 final selectedDayOffsetProvider =
@@ -80,7 +89,82 @@ final shiftTemplatesProvider = FutureProvider.autoDispose
   return ref.read(shiftRepositoryProvider).templates(detId);
 });
 
+/// Every shift a template has materialised. The shift editor reads this to
+/// show which repeat days are locked because they already have people on them.
+final templateOccurrencesProvider = FutureProvider.autoDispose
+    .family<Result<List<Shift>>, String>((ref, templateId) async {
+  return ref.read(shiftRepositoryProvider).shiftsForTemplate(templateId);
+});
+
 final shiftCandidatesProvider = FutureProvider.autoDispose
     .family<Result<List<ShiftCandidate>>, String>((ref, shiftId) async {
   return ref.read(shiftRepositoryProvider).candidatesFor(shiftId);
 });
+
+class AttendanceStatsQuery {
+  AttendanceStatsQuery({
+    required this.detachmentId,
+    required DateTime from,
+    required DateTime to,
+    this.memberId,
+  })  : from = dateOnly(from),
+        to = dateOnly(to);
+
+  final String detachmentId;
+  final DateTime from;
+  final DateTime to;
+  final String? memberId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AttendanceStatsQuery &&
+      other.detachmentId == detachmentId &&
+      other.from == from &&
+      other.to == to &&
+      other.memberId == memberId;
+
+  @override
+  int get hashCode => Object.hash(detachmentId, from, to, memberId);
+}
+
+final attendanceStatisticsProvider = FutureProvider.autoDispose
+    .family<Result<AttendanceStatistics>, AttendanceStatsQuery>((ref, q) async {
+  final result = await ref.read(shiftRepositoryProvider).listForRange(
+        q.detachmentId,
+        q.from,
+        q.to,
+      );
+  return result.when(
+    success: (shifts, {stale = false}) => Success(
+      AttendanceStatistics.fromShifts(shifts, memberId: q.memberId),
+      stale: stale,
+    ),
+    failure: (message, code) => Failure(message, code: code),
+    offline: (cached) => Offline(
+      cached: cached == null
+          ? null
+          : AttendanceStatistics.fromShifts(cached, memberId: q.memberId),
+    ),
+  );
+});
+
+class AttendanceEntryDefaults {
+  const AttendanceEntryDefaults({this.checkInAt, this.checkOutAt});
+
+  final DateTime? checkInAt;
+  final DateTime? checkOutAt;
+
+  AttendanceEntryDefaults copyWith(
+          {DateTime? checkInAt, DateTime? checkOutAt}) =>
+      AttendanceEntryDefaults(
+        checkInAt: checkInAt ?? this.checkInAt,
+        checkOutAt: checkOutAt ?? this.checkOutAt,
+      );
+}
+
+/// Kept per shift so entering attendance for the next member starts with the
+/// last date and time used, without mutating any previous member's record.
+final attendanceEntryDefaultsProvider =
+    StateProvider.family<AttendanceEntryDefaults, String>(
+  (ref, shiftId) => const AttendanceEntryDefaults(),
+);

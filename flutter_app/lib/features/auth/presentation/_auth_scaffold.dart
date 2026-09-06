@@ -36,12 +36,13 @@ class AuthScaffold extends StatelessWidget {
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(
-            AppSpacing.xl, AppSpacing.xxl, AppSpacing.xl, AppSpacing.xl),
+              AppSpacing.xl, AppSpacing.xxl, AppSpacing.xl, AppSpacing.xl),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Container(
-                width: 56, height: 56,
+                width: 56,
+                height: 56,
                 decoration: BoxDecoration(
                   color: c.primaryTint,
                   borderRadius: BorderRadius.circular(AppRadii.lg),

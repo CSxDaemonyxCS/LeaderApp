@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:printing/printing.dart';
 
+import '../../../core/export/attendance_pdf.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../l10n/strings.dart';
@@ -35,7 +37,7 @@ class ReportPreviewPage extends ConsumerWidget {
           IconButton(
             tooltip: S.exportCopy,
             icon: const Icon(Icons.copy_all_rounded),
-            onPressed: () => _copy(context, ref),
+            onPressed: () => _export(context, ref),
           ),
         ],
       ),
@@ -76,9 +78,17 @@ class ReportPreviewPage extends ConsumerWidget {
             ),
             const SizedBox(height: AppSpacing.lg),
             FilledButton.icon(
-              onPressed: () => _copy(context, ref),
-              icon: const Icon(Icons.copy_all_rounded, size: 19),
-              label: Text('${S.exportCopy} · ${spec.format.label}'),
+              onPressed: () => _export(context, ref),
+              icon: Icon(
+                spec.format == ReportFormat.pdf
+                    ? Icons.ios_share_rounded
+                    : Icons.copy_all_rounded,
+                size: 19,
+              ),
+              label: Text(
+                '${spec.format == ReportFormat.pdf ? S.exportPdf : S.exportCopy} · '
+                '${spec.format.label}',
+              ),
             ),
           ],
         ),
@@ -86,7 +96,7 @@ class ReportPreviewPage extends ConsumerWidget {
     );
   }
 
-  Future<void> _copy(BuildContext context, WidgetRef ref) async {
+  Future<void> _export(BuildContext context, WidgetRef ref) async {
     final result = await ref.read(
       reportProvider(ReportQuery(detachmentId: detachmentId, spec: spec))
           .future,
@@ -94,14 +104,25 @@ class ReportPreviewPage extends ConsumerWidget {
     if (!context.mounted) return;
     result.when(
       success: (doc, {stale = false}) async {
-        await Clipboard.setData(ClipboardData(
-          text: spec.format == ReportFormat.excel
-              ? doc.toCsv()
-              : doc.toPlainText(),
-        ));
+        try {
+          if (spec.format == ReportFormat.pdf) {
+            final bytes = await AttendancePdfBuilder.build(doc);
+            await Printing.sharePdf(bytes: bytes, filename: 'mtm-report.pdf');
+          } else {
+            await Clipboard.setData(ClipboardData(text: doc.toCsv()));
+          }
+        } catch (_) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text(S.pdfError)));
+          return;
+        }
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text(S.exportCopied)));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            spec.format == ReportFormat.pdf ? S.pdfReady : S.exportCopied,
+          ),
+        ));
       },
       failure: (message, _) => ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(message))),

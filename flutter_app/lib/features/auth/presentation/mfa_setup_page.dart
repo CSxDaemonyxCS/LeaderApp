@@ -44,15 +44,16 @@ class MfaSetupPage extends ConsumerWidget {
               border: Border.all(color: c.line),
             ),
             child: const SizedBox(
-              height: 200, width: 200,
+              height: 200,
+              width: 200,
               child: Center(child: Skeleton(width: 200, height: 200)),
             ),
           ),
           const SizedBox(height: AppSpacing.md),
           const Skeleton(width: 200, height: 14),
         ]),
-        error: (e, st) => Text(e.toString(),
-            style: TextStyle(color: c.crit, fontSize: 13)),
+        error: (e, st) =>
+            Text(e.toString(), style: TextStyle(color: c.crit, fontSize: 13)),
         data: (data) => _Setup(data: data),
       ),
     );
@@ -93,8 +94,7 @@ class _Setup extends StatelessWidget {
         const SizedBox(height: AppSpacing.xl),
         Text(S.mfaBackupCodesTitle, style: t.titleMedium),
         const SizedBox(height: AppSpacing.xs),
-        Text(S.mfaBackupCodesSub,
-            style: t.bodyMedium?.copyWith(color: c.ink3)),
+        Text(S.mfaBackupCodesSub, style: t.bodyMedium?.copyWith(color: c.ink3)),
         const SizedBox(height: AppSpacing.md),
         Container(
           padding: const EdgeInsets.all(AppSpacing.md),
@@ -110,7 +110,8 @@ class _Setup extends StatelessWidget {
                 crossAxisCount: 2,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                mainAxisSpacing: 8, crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
                 childAspectRatio: 3.2,
                 children: [
                   for (final code in data.backupCodes)
@@ -122,8 +123,7 @@ class _Setup extends StatelessWidget {
                       ),
                       child: Text(
                         toArabicIndic(code),
-                        style:
-                            AppTypography.digits(c.ink, letterSpacing: 1),
+                        style: AppTypography.digits(c.ink, letterSpacing: 1),
                       ),
                     ),
                 ],
@@ -132,11 +132,11 @@ class _Setup extends StatelessWidget {
               OutlinedButton.icon(
                 icon: const Icon(Icons.copy_rounded, size: 18),
                 onPressed: () async {
-                  await Clipboard.setData(ClipboardData(
-                      text: data.backupCodes.join('\n')));
+                  await Clipboard.setData(
+                      ClipboardData(text: data.backupCodes.join('\n')));
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text(S.copied)));
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(const SnackBar(content: Text(S.copied)));
                   }
                 },
                 label: const Text(S.copy),
@@ -177,8 +177,8 @@ class _Field extends StatelessWidget {
               Text(label, style: TextStyle(color: c.ink3, fontSize: 11)),
               const SizedBox(height: 4),
               Text(value,
-                  style: AppTypography.digits(c.ink,
-                      size: 15, letterSpacing: 1)),
+                  style:
+                      AppTypography.digits(c.ink, size: 15, letterSpacing: 1)),
             ],
           ),
         ),
@@ -187,8 +187,8 @@ class _Field extends StatelessWidget {
           onPressed: () async {
             await Clipboard.setData(ClipboardData(text: value));
             if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text(S.copied)));
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(const SnackBar(content: Text(S.copied)));
             }
           },
         ),

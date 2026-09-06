@@ -92,8 +92,7 @@ class _DetachmentEditPageState extends ConsumerState<DetachmentEditPage> {
     final onSave = _isNew
         ? ref.whenCan(Cap.detachmentCreate, _save)
         : ref.whenCan(Cap.detachmentEdit, _save, detachmentId: widget.id);
-    final canArchive =
-        ref.capabilities.canIn(widget.id, Cap.detachmentArchive);
+    final canArchive = ref.capabilities.canIn(widget.id, Cap.detachmentArchive);
     // Archiving keeps the record and its history; deleting removes the
     // container and everything inside it. Two different acts, so the
     // destructive one sits apart from the form and asks first.
@@ -138,9 +137,7 @@ class _DetachmentEditPageState extends ConsumerState<DetachmentEditPage> {
               value: _status,
               // A detachment's lifecycle is a separate capability from its
               // details, so the control is shown read-only rather than hidden.
-              onChanged: canArchive
-                  ? (s) => setState(() => _status = s)
-                  : null,
+              onChanged: canArchive ? (s) => setState(() => _status = s) : null,
             ),
           ],
           const SizedBox(height: AppSpacing.xxl),
@@ -299,9 +296,8 @@ class _Field extends StatelessWidget {
           controller: controller,
           maxLines: maxLines,
           decoration: InputDecoration(hintText: hint),
-          validator: (v) => required && (v == null || v.trim().isEmpty)
-              ? S.required
-              : null,
+          validator: (v) =>
+              required && (v == null || v.trim().isEmpty) ? S.required : null,
         ),
       ],
     );

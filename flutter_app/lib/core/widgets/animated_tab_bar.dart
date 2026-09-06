@@ -32,8 +32,7 @@ class AnimatedTabBar extends StatelessWidget {
             child: Stack(
               children: [
                 AnimatedPositionedDirectional(
-                  duration:
-                      effectiveDuration(context, MotionTokens.medium),
+                  duration: effectiveDuration(context, MotionTokens.medium),
                   curve: MotionTokens.emphasized,
                   start: tabWidth * currentIndex,
                   width: tabWidth,

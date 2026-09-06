@@ -21,46 +21,46 @@ void main() {
   test('a new member joins their detachment roster and nobody else\'s',
       () async {
     final repo = MockTeamRepository();
-    final before = ok<List<TeamMember>>(
-        await repo.listForDetachment(detachment)).length;
+    final before =
+        ok<List<TeamMember>>(await repo.listForDetachment(detachment)).length;
 
     final created = ok<TeamMember>(await repo.create(
       detachmentId: detachment,
       name: 'سلام الحموي',
       department: 'الإسعاف',
       personalNumber: '150',
-      role: TeamRole.medic,
+      role: TeamRole.administrator,
     ));
 
     expect(created.detachmentId, detachment);
     expect(created.department, 'الإسعاف');
     expect(created.personalNumber, '150');
     // Nobody has taken attendance for someone who just joined.
-    expect(created.attendance, AttendanceState.notInvited);
+    expect(created.attendance, AttendanceState.notCheckedIn);
 
-    final after = ok<List<TeamMember>>(
-        await repo.listForDetachment(detachment));
+    final after =
+        ok<List<TeamMember>>(await repo.listForDetachment(detachment));
     expect(after.length, before + 1);
 
-    final other =
-        ok<List<TeamMember>>(await repo.listForDetachment('d_homs'));
+    final other = ok<List<TeamMember>>(await repo.listForDetachment('d_homs'));
     expect(other.any((m) => m.id == created.id), isFalse);
   });
 
-  test('the monogram is derived from the name, and follows a rename',
-      () async {
+  test('the monogram is derived from the name, and follows a rename', () async {
     final repo = MockTeamRepository();
     final created = ok<TeamMember>(await repo.create(
       detachmentId: detachment,
       name: 'سلام الحموي',
       department: 'الإسعاف',
       personalNumber: '151',
-      role: TeamRole.medic,
+      role: TeamRole.administrator,
     ));
     expect(created.initials, 'سا');
 
-    final renamed = ok<TeamMember>(
-        await repo.update(created.copyWith(name: 'ريم قاسم')));
+    // Two distinct first letters, so the assertion proves the second word's
+    // initial is really recomputed rather than carried over from 'سلام'.
+    final renamed =
+        ok<TeamMember>(await repo.update(created.copyWith(name: 'ريم قاسم')));
     expect(renamed.initials, 'رق');
   });
 
@@ -73,7 +73,7 @@ void main() {
       name: 'اسم آخر',
       department: 'الإسعاف',
       personalNumber: '101',
-      role: TeamRole.volunteer,
+      role: TeamRole.member,
     );
     expect(failureCode(clash), 'number_taken');
 
@@ -84,7 +84,7 @@ void main() {
       name: 'اسم آخر',
       department: 'الإسعاف',
       personalNumber: '101',
-      role: TeamRole.volunteer,
+      role: TeamRole.member,
     );
     expect(failureCode(elsewhere), isNull);
   });
@@ -119,7 +119,7 @@ void main() {
       name: 'عضو جديد',
       department: 'الإسعاف',
       personalNumber: '101',
-      role: TeamRole.volunteer,
+      role: TeamRole.member,
     );
     expect(failureCode(reused), isNull);
   });

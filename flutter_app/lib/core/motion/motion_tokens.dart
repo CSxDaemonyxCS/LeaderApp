@@ -5,6 +5,9 @@ import 'motion_level.dart';
 /// Single source of truth for every duration and curve in the app.
 /// Widgets must NOT hardcode `Duration(milliseconds: X)` or curves —
 /// they call these constants or the context-aware helpers below.
+///
+/// These are the *full* values. The user's [MotionLevel] scales them; it
+/// never replaces them, so there is exactly one duration scale in the app.
 class MotionTokens {
   MotionTokens._();
 
@@ -38,40 +41,79 @@ class MotionTokens {
   // motion-level setting has a single place to reach.
   static const Duration progressFill = Duration(milliseconds: 700);
 
+  /// How far a switching tab body travels, at full intensity. Deliberately
+  /// a nudge and not a page-width slide: the tab bar already says which tab
+  /// won, so the body only has to say which *way*.
+  static const double tabSwitchTravel = 24;
+
   // Looping ambience. These drive controllers that are stopped outright
-  // under reduced motion (see Skeleton and LockWindow), so they are the
-  // one place a raw duration is still the right value to read.
+  // when the level turns ambience off (see Skeleton and LockWindow), so
+  // they are the one place a raw duration is still the right value to read.
   static const Duration shimmerLoop = Duration(milliseconds: 1200);
   static const Duration haloPulse = Duration(milliseconds: 1600);
 }
 
 /// True when the OS asked to disable/reduce animations.
-bool osReduceMotion(BuildContext context) =>
-    MediaQuery.of(context).disableAnimations;
-
-/// True when we should currently short-circuit animations. This is the
-/// SINGLE place that decides — every widget reads through here so the
-/// motion-level setting can flip the whole app without scattered `if`s.
 ///
-/// It reads the resolved [MotionLevel] and nothing else. The OS
-/// reduce-motion flag is folded in one level up: it seeds the first-launch
-/// default in `motionLevelProvider` and the value used while the stored
-/// setting is still loading (see `main.dart`). Keeping it out of here is
-/// what lets a user who explicitly picks حركة كاملة keep the full
-/// experience even on a device that asks for less — the setting has to be
-/// an override, not a suggestion.
-bool reduceMotion(BuildContext context) =>
-    MotionScope.of(context) == MotionLevel.reduced;
+/// Reads the single MediaQuery aspect rather than the whole thing, so a
+/// keyboard opening or the device rotating does not rebuild every animated
+/// widget in the app.
+bool osReduceMotion(BuildContext context) =>
+    MediaQuery.maybeDisableAnimationsOf(context) ?? false;
 
-/// Pick a duration honoring reduced-motion. Returns [Duration.zero]
-/// under reduced motion so `AnimatedContainer`, `AnimatedOpacity`, etc.
-/// snap to the target frame.
-Duration effectiveDuration(BuildContext context, Duration d) =>
-    reduceMotion(context) ? Duration.zero : d;
+/// The resolved motion profile for this subtree.
+///
+/// **Accessibility wins.** If the platform asks for animations to be off,
+/// this returns [MotionSpec.none] whatever quality level the user picked —
+/// the setting chooses how rich motion is, never whether an accessibility
+/// request is honoured.
+MotionSpec motionSpec(BuildContext context) =>
+    osReduceMotion(context) ? MotionSpec.none : MotionScope.of(context).spec;
 
-/// Same idea for curves: a linear curve when reduced (there's no
+/// True when we should short-circuit animations and render the end state on
+/// the first frame. This is the SINGLE place that decides — every widget
+/// reads through here rather than scattering `if`s.
+bool reduceMotion(BuildContext context) => motionSpec(context).isInstant;
+
+/// Pick a duration honoring the current motion profile. Returns
+/// [Duration.zero] when motion is off, so `AnimatedContainer`,
+/// `AnimatedOpacity`, etc. snap to the target frame; otherwise scales the
+/// token by the level's duration scale.
+Duration effectiveDuration(BuildContext context, Duration d) {
+  final scale = motionSpec(context).durationScale;
+  if (scale == 0) return Duration.zero;
+  if (scale == 1) return d;
+  return Duration(microseconds: (d.inMicroseconds * scale).round());
+}
+
+/// Duration for a value tween — an animated counter, a progress bar
+/// filling. Returns [Duration.zero] when the level has value tweens off, so
+/// the figure snaps to its target instead of re-laying-out on every frame,
+/// and otherwise defers to [effectiveDuration].
+Duration effectiveValueDuration(BuildContext context, Duration d) =>
+    motionSpec(context).animatedValues
+        ? effectiveDuration(context, d)
+        : Duration.zero;
+
+/// Same idea for curves: a linear curve when motion is off (there's no
 /// distance to travel anyway, so the curve is a no-op, but returning
-/// [Curves.linear] avoids the spring overshoot showing as a jitter
-/// when duration is very small).
+/// [Curves.linear] avoids the spring overshoot showing as a jitter when
+/// duration is very small).
 Curve effectiveCurve(BuildContext context, Curve c) =>
     reduceMotion(context) ? Curves.linear : c;
+
+/// A curve that overshoots only where the level allows it. Use this instead
+/// of reaching for [MotionTokens.spring] directly: at the cheap levels the
+/// bounce reads as sloppiness on a device that is already struggling, and
+/// two of the properties the nav pill animates have a hard floor at zero.
+Curve effectiveSpring(BuildContext context) {
+  final spec = motionSpec(context);
+  if (spec.isInstant) return Curves.linear;
+  return spec.overshoot ? MotionTokens.spring : MotionTokens.emphasized;
+}
+
+/// Scale a travel distance by the level's motion intensity. Trimming
+/// distance is the cheapest way to make a busy screen feel lighter without
+/// removing the motion that explains it.
+double motionTravel(BuildContext context, double distance) =>
+    distance * motionSpec(context).intensity;

@@ -34,6 +34,7 @@ new app invented a value set that the legacy program did not have, it is flagged
 | **WorkshopParticipant** | id, workshopId, name, initials, kind, attendance | Legacy also carries a section assignment and a tri-state payment status. |
 | **HomeSummary** | detachmentName, centerName, activeShift, lockRemaining, attendancePresent, attendanceTotal, decisions[], workshopsThisWeek, attendanceRatePercent, stockLowCount | |
 | **HomeDecisionItem** | id, kind, title, subtitle, actionLabel | kind: unfilled shift / expiring stock / join request. |
+| **AppNotification** | id, kind, occurredAt, count, recordLabel, target, isRead | The Notifications Center. **Derived, not stored** — no backend emits these yet, so the client joins shift + inventory records and its own outbox. `id` must be stable per condition: read state is keyed by it. |
 | **NotificationPrefs** | shiftReminders, stockAlerts, workshopUpdates, joinRequests | Personal, per-user. |
 | **OrgInfo** | name, legalName, address, emailPublic, detachmentCount, memberCount | |
 
@@ -47,6 +48,12 @@ Raised for your decision, not assumed:
 - **Shift occurrence** — a dated instance of a weekly shift, cancellable as a
   tombstone.
 - **Shift roster vs per-date attendance** — two separate lists, deliberately.
+- **Attendance correction** — an append-only record a session with
+  `shift.attendance.override` adds once the one-hour ordinary edit window has
+  closed. Never edits or removes an earlier entry or the original attendance
+  row; the current (effective) attendance is a value derived by applying
+  every correction in order, not a second copy the two could disagree on. See
+  `FRONTEND-BACKEND-INTEGRATION.md` §6 (Task 5).
 - **Patient** — a detachment's patient register. See open decision #8.
 - **Member specialty and phone** — legacy member fields with no equivalent here.
 
@@ -106,13 +113,21 @@ inventory or schedule screen is reachable without one. See DETACHMENT-SCOPING.md
 
 ### 2.5 More / settings
 
+Reorganized into a navigation hub plus four nested category screens (Point 1
+of the Settings IA pass). No new backend data: every nested screen reads and
+writes the same `SettingsRepository` methods the hub used to call directly.
+
 | Screen | State | Entities displayed | Fields used | Actions | Refresh trigger |
 |---|---|---|---|---|---|
-| Settings `/more` | **stub** | AuthUser, app preferences | name, orgName, theme, motion level | Change theme, change motion level, navigate, sign out | Preferences read once at start-up; changes are written immediately and take effect without restart. |
-| Profile `/more/profile` | **stub** | AuthUser | name, email, orgName, avatarInitials | Edit own profile | On open. |
-| Security `/more/security` | **stub** | Session | device, ipMasked, locationLabel, startedAt, current | Revoke a session, manage MFA | On open; after revoking a session. |
-| Notifications `/more/notifications` | **stub** | NotificationPrefs | shiftReminders, stockAlerts, workshopUpdates, joinRequests | Toggle each preference | On open. Each toggle persists immediately. |
-| Org info `/more/org` | **stub** | OrgInfo | name, legalName, address, emailPublic, detachmentCount, memberCount | View (edit gated on `org.edit`) | On open. |
+| Settings hub `/more` | **built** | app preferences, sync status (for row summaries only) | active palette/mode, active motion level/frame rate, pending/needs-review counts | Navigate to Themes, Performance, Sync, Profile, Security, Notifications, Organization; sign out | Row summaries follow the same providers the nested screens write to; no separate fetch. |
+| Themes `/more/themes` | **built** | app preferences | palette, mode (light/dark/system), eye-protect | Change palette, mode, eye-protect | Preferences read once at start-up; changes are written immediately and take effect without restart. |
+| Performance `/more/performance` | **built** | app preferences | motion/quality level, frame-rate preference | Change motion level, change frame rate | Preferences read once at start-up; changes are written immediately and take effect without restart. |
+| Sync `/more/sync` | **built** | local outbox (pending/needs-review counts, last sync time) | pending count, needs-review count, last-synced time | Trigger a manual sync, open Needs Review | On open; after any sync run (manual or automatic). |
+| Profile `/more/profile` | **built** | AuthUser | name, email, orgName, avatarInitials | Edit own profile | On open. |
+| Security `/more/security` | **built** | Session | device, ipMasked, locationLabel, startedAt, current | Revoke a session, manage MFA | On open; after revoking a session. |
+| Notifications `/more/notifications` | **built** | NotificationPrefs | shiftReminders, stockAlerts, workshopUpdates, joinRequests | Toggle each preference | On open. Each toggle persists immediately. |
+| Notifications Center `/notifications` | **built** | AppNotification (derived from Shift + InventoryItem + the local outbox) | kind, occurredAt, count, recordLabel, target, isRead | Open the record behind a row (existing shift sheet / detachment tab / Needs Review / Sync); mark one read; mark all read | On open, and whenever the outbox or read state changes — the merge is client-side, so neither refetches the records. |
+| Org info `/more/org` | **built** | OrgInfo | name, legalName, address, emailPublic, detachmentCount, memberCount | View (edit gated on `org.edit`) | On open. |
 
 ---
 

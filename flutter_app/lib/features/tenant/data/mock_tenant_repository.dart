@@ -64,12 +64,10 @@ class MockTenantRepository implements TenantRepository {
   /// still counts as belonging to the tenant, but contributes no coverage —
   /// averaging a dormant zero into a live number would read as a failure.
   Tenant _withCounts(Tenant t, List<Detachment> all) {
-    final live =
-        all.where((d) => d.status == DetachmentStatus.active).toList();
+    final live = all.where((d) => d.status == DetachmentStatus.active).toList();
     final coverage = live.isEmpty
         ? 0
-        : (live.fold<int>(0, (sum, d) => sum + d.coveragePercent) /
-                live.length)
+        : (live.fold<int>(0, (sum, d) => sum + d.coveragePercent) / live.length)
             .round();
     return t.copyWith(
       detachmentCount: all.length,

@@ -107,8 +107,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               child: Row(children: [
                 Icon(Icons.error_outline_rounded, color: c.crit, size: 18),
                 const SizedBox(width: 8),
-                Expanded(child: Text(_error!,
-                    style: TextStyle(color: c.crit, fontSize: 13))),
+                Expanded(
+                    child: Text(_error!,
+                        style: TextStyle(color: c.crit, fontSize: 13))),
               ]),
             ),
           ],
@@ -117,7 +118,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             onPressed: _busy ? null : _submit,
             child: _busy
                 ? SizedBox(
-                    width: 22, height: 22,
+                    width: 22,
+                    height: 22,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: c.primaryInk),
                   )

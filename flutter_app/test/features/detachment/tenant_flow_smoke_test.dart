@@ -79,7 +79,9 @@ void main() {
 
     await tester.tap(find.text(S.detachmentShifts));
     await tester.pumpAndSettle();
-    expect(find.text(S.weekCoverage), findsOneWidget);
+    // The schedule now opens straight onto the day selector — the weekly
+    // summary card it used to sit under is gone.
+    expect(find.text(S.thisWeek), findsOneWidget);
 
     await tester.tap(find.text(S.detachmentStorage));
     await tester.pumpAndSettle();
@@ -93,19 +95,26 @@ void main() {
     // live.
     router.go('/detachment/d_dam_central/report');
     await tester.pumpAndSettle();
-    expect(find.text(S.exportSections), findsNothing); // heading carries a count
+    expect(
+        find.text(S.exportSections), findsNothing); // heading carries a count
     expect(find.text(S.secSummary), findsOneWidget);
   });
 
-  test('every palette resolves in both modes', () {
+  test('every palette resolves in both modes, plain and eye-protect', () {
     // The theme is built from tokens rather than from a seed colour alone, so
     // a missing token would be a runtime null rather than a compile error.
-    // Building all six is the cheapest way to catch that.
+    // Building every palette × mode × eye-protect is the cheapest way to
+    // catch that — and the eye-protect pass also exercises `AppColors.warmed`.
     for (final palette in PaletteId.values) {
-      for (final theme in [AppTheme.light(palette), AppTheme.dark(palette)]) {
-        expect(theme.extension<AppColorsExt>(), isNotNull);
-        expect(theme.scaffoldBackgroundColor, isNotNull);
-        expect(theme.textTheme.titleMedium?.fontFamily, isNotNull);
+      for (final eyeProtect in [false, true]) {
+        for (final theme in [
+          AppTheme.light(palette, eyeProtect: eyeProtect),
+          AppTheme.dark(palette, eyeProtect: eyeProtect),
+        ]) {
+          expect(theme.extension<AppColorsExt>(), isNotNull);
+          expect(theme.scaffoldBackgroundColor, isNotNull);
+          expect(theme.textTheme.titleMedium?.fontFamily, isNotNull);
+        }
       }
     }
   });

@@ -25,6 +25,16 @@ class AnimatedCounter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.c;
+    // The cheap levels turn value tweens off outright: a counter re-lays
+    // its text out on every frame it runs, and a dashboard can hold half a
+    // dozen of them. Skipping the builder means the final figure — the one
+    // the user opened the screen to read — is on screen immediately.
+    if (!motionSpec(context).animatedValues) {
+      return TabularDigits(
+        _toArabicIndic(value),
+        style: style ?? AppTypography.number(c, size: 26),
+      );
+    }
     return TweenAnimationBuilder<double>(
       // Under reduced motion, tween duration is zero so the widget renders
       // the target value on the first frame — no counter animation.
@@ -105,8 +115,16 @@ class TabularDigits extends StatelessWidget {
 /// Convert Western digits to Arabic-Indic — matches the existing dashboards.
 String _toArabicIndic(int n) {
   const map = {
-    '0': '٠', '1': '١', '2': '٢', '3': '٣', '4': '٤',
-    '5': '٥', '6': '٦', '7': '٧', '8': '٨', '9': '٩',
+    '0': '٠',
+    '1': '١',
+    '2': '٢',
+    '3': '٣',
+    '4': '٤',
+    '5': '٥',
+    '6': '٦',
+    '7': '٧',
+    '8': '٨',
+    '9': '٩',
   };
   final buf = StringBuffer();
   for (final ch in n.toString().split('')) {
@@ -117,8 +135,16 @@ String _toArabicIndic(int n) {
 
 String toArabicIndic(String s) {
   const map = {
-    '0': '٠', '1': '١', '2': '٢', '3': '٣', '4': '٤',
-    '5': '٥', '6': '٦', '7': '٧', '8': '٨', '9': '٩',
+    '0': '٠',
+    '1': '١',
+    '2': '٢',
+    '3': '٣',
+    '4': '٤',
+    '5': '٥',
+    '6': '٦',
+    '7': '٧',
+    '8': '٨',
+    '9': '٩',
   };
   final buf = StringBuffer();
   for (final ch in s.split('')) {
@@ -134,8 +160,16 @@ String toArabicIndic(String s) {
 /// "١٠١" and "101" are two different member numbers.
 String toWesternDigits(String s) {
   const map = {
-    '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
-    '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9',
+    '٠': '0',
+    '١': '1',
+    '٢': '2',
+    '٣': '3',
+    '٤': '4',
+    '٥': '5',
+    '٦': '6',
+    '٧': '7',
+    '٨': '8',
+    '٩': '9',
   };
   final buf = StringBuffer();
   for (final ch in s.split('')) {

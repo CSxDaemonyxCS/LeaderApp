@@ -76,7 +76,8 @@ class _TenantEditPageState extends ConsumerState<TenantEditPage> {
   Widget _form() {
     final c = context.c;
     final onSave = ref.whenCan(Cap.detachmentCreate, _save);
-    final onDelete = _isNew ? null : ref.whenCan(Cap.adminManage, _confirmDelete);
+    final onDelete =
+        _isNew ? null : ref.whenCan(Cap.adminManage, _confirmDelete);
 
     return Form(
       key: _formKey,
@@ -89,8 +90,8 @@ class _TenantEditPageState extends ConsumerState<TenantEditPage> {
             controller: _name,
             autofocus: _isNew,
             textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(
-                hintText: S.tenantNamePlaceholder),
+            decoration:
+                const InputDecoration(hintText: S.tenantNamePlaceholder),
             validator: (v) =>
                 (v == null || v.trim().isEmpty) ? S.required : null,
           ),
@@ -101,8 +102,8 @@ class _TenantEditPageState extends ConsumerState<TenantEditPage> {
           TextFormField(
             controller: _notes,
             maxLines: 2,
-            decoration: const InputDecoration(
-                hintText: S.tenantNotesPlaceholder),
+            decoration:
+                const InputDecoration(hintText: S.tenantNotesPlaceholder),
           ),
           const SizedBox(height: AppSpacing.sm),
           Row(children: [
@@ -110,8 +111,7 @@ class _TenantEditPageState extends ConsumerState<TenantEditPage> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(S.tenantHint,
-                  style:
-                      TextStyle(color: c.ink3, fontSize: 12, height: 1.5)),
+                  style: TextStyle(color: c.ink3, fontSize: 12, height: 1.5)),
             ),
           ]),
           const SizedBox(height: AppSpacing.xxl),

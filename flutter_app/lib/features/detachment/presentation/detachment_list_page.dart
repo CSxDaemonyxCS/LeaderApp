@@ -59,9 +59,8 @@ class _S extends ConsumerState<DetachmentListPage> {
       filter: _filter,
       query: _query,
     );
-    final onCreate = _tenantId == null
-        ? null
-        : ref.whenCan(Cap.detachmentCreate, _openNew);
+    final onCreate =
+        _tenantId == null ? null : ref.whenCan(Cap.detachmentCreate, _openNew);
 
     return Scaffold(
       backgroundColor: c.bg,
@@ -242,8 +241,7 @@ class _DetachmentCard extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: PressScale(
-          onTap: () =>
-              GoRouter.of(context).push('/detachment/${d.id}/team'),
+          onTap: () => GoRouter.of(context).push('/detachment/${d.id}/team'),
           borderRadius: BorderRadius.circular(AppRadii.lg),
           child: Container(
             padding: const EdgeInsets.all(AppSpacing.md),

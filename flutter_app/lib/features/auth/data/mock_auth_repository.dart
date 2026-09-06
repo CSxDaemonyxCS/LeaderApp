@@ -1,6 +1,6 @@
 import 'dart:math';
 
-import '../../../core/access/capability_presets.dart';
+import '../../../core/access/capability.dart';
 import '../../../core/result/result.dart';
 import '../domain/auth_models.dart';
 import '../domain/auth_repository.dart';
@@ -16,30 +16,20 @@ class MockAuthRepository implements AuthRepository {
   AuthUser? _me = _mockUser;
   final _rand = Random(7);
 
-  static final AuthUser _mockUser = AuthUser(
+  static const AuthUser _mockUser = AuthUser(
     id: 'u_1',
     name: 'ليلى ياسين',
     email: 'l.yaseen@mtm.org',
     // TODO(backend): the real grant is issued by the server per user. A
     // preset is only the starting set an admin picks at account creation —
     // it is never the user's identity and is never consulted at check time.
-    capabilities: CapabilityPreset.mainAdmin.grant(detachments: _seeded),
+    // The root mock admin holds every capability organisation-wide. This is
+    // essential for detachments created at runtime: a grant copied only over
+    // seed ids would make the new detachment's Add Member action disappear.
+    capabilities: Capabilities(global: Cap.all),
     orgName: 'فريق الإسعاف التطوعي · دمشق',
     avatarInitials: 'لي',
   );
-
-  /// The seeded detachment ids from `MockDetachmentRepository`, duplicated
-  /// here rather than imported so the auth mock does not depend on the
-  /// detachment feature. Granting the scoped keys over all of them keeps the
-  /// mock admin able to open every detachment while still exercising the
-  /// per-detachment code path — a global-only grant would never call it.
-  static const _seeded = [
-    'd_dam_central',
-    'd_dam_rural',
-    'd_homs',
-    'd_coast',
-    'd_north_arch',
-  ];
 
   Future<void> _latency() => Future<void>.delayed(
         Duration(milliseconds: 400 + _rand.nextInt(400)),

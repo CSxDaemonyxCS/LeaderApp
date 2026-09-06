@@ -7,10 +7,10 @@ import '../motion/press_scale.dart';
 import '../theme/app_palette.dart';
 import '../theme/app_theme.dart';
 
-/// Under reduced motion the bottom nav renders as an opaque frosted card
-/// so we can drop [BackdropFilter] — the single heaviest effect in the
-/// app on low-end Android. The nudge in opacity keeps it readable
-/// without the blur behind it.
+/// At the cheap motion levels the bottom nav renders as an opaque frosted
+/// card so we can drop [BackdropFilter] — the single heaviest effect in the
+/// app on low-end Android. The nudge in opacity keeps it readable without
+/// the blur behind it.
 double _fallbackOpacity(bool isDark) => isDark ? 0.92 : 0.96;
 
 /// A destination on the floating glass bottom nav.
@@ -49,43 +49,43 @@ class GlassBottomNav extends StatelessWidget {
     final borderColor = isDark
         ? Colors.white.withValues(alpha: 0.10)
         : c.ink.withValues(alpha: 0.08);
-    final shadow = isDark
-        ? [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.55),
-              blurRadius: 40,
-              offset: const Offset(0, 14),
-              spreadRadius: -10,
-            ),
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.35),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-              spreadRadius: -6,
-            ),
-          ]
-        : [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.28),
-              blurRadius: 32,
-              offset: const Offset(0, 12),
-              spreadRadius: -8,
-            ),
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.18),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-              spreadRadius: -4,
-            ),
-          ];
+    // The motion level decides how much the nav costs to paint. Below
+    // `balanced` the BackdropFilter goes entirely and the two-layer drop
+    // shadow collapses to one; the pill still reads as "elevated surface"
+    // via a bumped opacity + border + a single shadow.
+    final spec = motionSpec(context);
 
-    // Reduced motion drops the BackdropFilter — the heaviest paint in
-    // the app on low-end Android. The pill still reads as "elevated
-    // surface" via a bumped opacity + border + shadow.
-    final reduced = reduceMotion(context);
-    final surfaceColor = reduced
-        ? c.surface.withValues(alpha: _fallbackOpacity(isDark))
-        : glassBg;
+    final ambient = isDark
+        ? BoxShadow(
+            color: Colors.black.withValues(alpha: 0.55),
+            blurRadius: 40,
+            offset: const Offset(0, 14),
+            spreadRadius: -10,
+          )
+        : BoxShadow(
+            color: Colors.black.withValues(alpha: 0.28),
+            blurRadius: 32,
+            offset: const Offset(0, 12),
+            spreadRadius: -8,
+          );
+    final contact = isDark
+        ? BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+            spreadRadius: -6,
+          )
+        : BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+            spreadRadius: -4,
+          );
+    final shadow = spec.richShadows ? [ambient, contact] : [contact];
+
+    final surfaceColor = spec.hasBlur
+        ? glassBg
+        : c.surface.withValues(alpha: _fallbackOpacity(isDark));
 
     final pill = Container(
       padding: const EdgeInsets.all(6),
@@ -110,7 +110,7 @@ class GlassBottomNav extends StatelessWidget {
       ),
     );
 
-    // RepaintBoundary in BOTH modes — isolates the nav's paint from the
+    // RepaintBoundary at every level — isolates the nav's paint from the
     // scrolling body below it. Without it, every scroll frame repaints
     // the glass card too.
     return RepaintBoundary(
@@ -126,13 +126,15 @@ class GlassBottomNav extends StatelessWidget {
                 constraints: const BoxConstraints(maxWidth: 380),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(AppRadii.pill),
-                  child: reduced
-                      ? pill
-                      : BackdropFilter(
-                          filter:
-                              ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+                  child: spec.hasBlur
+                      ? BackdropFilter(
+                          filter: ImageFilter.blur(
+                            sigmaX: spec.blurSigma,
+                            sigmaY: spec.blurSigma,
+                          ),
                           child: pill,
-                        ),
+                        )
+                      : pill,
                 ),
               ),
               const SizedBox(height: 8),
@@ -171,7 +173,7 @@ class _GlassTab extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppRadii.pill),
       child: AnimatedContainer(
         duration: effectiveDuration(context, MotionTokens.navPillMorph),
-        curve: MotionTokens.spring,
+        curve: effectiveSpring(context),
         height: 42,
         padding: EdgeInsets.symmetric(
           horizontal: active ? 12 : 8,
@@ -208,14 +210,14 @@ class _GlassTab extends StatelessWidget {
             ),
             ClipRect(
               child: AnimatedAlign(
-                duration:
-                    effectiveDuration(context, MotionTokens.navPillMorph),
+                duration: effectiveDuration(context, MotionTokens.navPillMorph),
                 // Same floor problem as the shadow above: a width factor
                 // cannot go below 0. The reveal keeps the spring, because
                 // that overshoot is the pill's signature; the hide uses the
                 // non-overshooting curve so it cannot land on a negative
                 // width and assert.
-                curve: active ? MotionTokens.spring : MotionTokens.emphasized,
+                curve:
+                    active ? effectiveSpring(context) : MotionTokens.emphasized,
                 widthFactor: active ? 1.0 : 0.0,
                 alignment: AlignmentDirectional.centerStart,
                 child: Padding(

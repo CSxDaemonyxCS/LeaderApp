@@ -17,6 +17,7 @@ class LockWindow extends StatefulWidget {
   });
 
   final LockWindowState state;
+
   /// Only used when [state] == open. Format: "mm:ss".
   final Duration? remaining;
 
@@ -50,9 +51,12 @@ class _LockWindowState extends State<LockWindow>
   }
 
   void _syncHalo() {
+    // The halo is a looping blurred shadow — the most expensive ambience
+    // in the app per frame — so it follows the level's ambience switch
+    // rather than the instant/animated one.
     final urgent = widget.state == LockWindowState.open &&
         (widget.remaining?.inSeconds ?? 999) < 60 &&
-        !reduceMotion(context);
+        motionSpec(context).ambientLoops;
     if (urgent && !_halo.isAnimating) {
       _halo.repeat(reverse: true);
     } else if (!urgent && _halo.isAnimating) {
@@ -94,8 +98,7 @@ class _LockWindowState extends State<LockWindow>
         ),
     };
 
-    final valueStyle =
-        AppTypography.digits(fg, size: 15, letterSpacing: 0.5);
+    final valueStyle = AppTypography.digits(fg, size: 15, letterSpacing: 0.5);
 
     return AnimatedBuilder(
       animation: _halo,

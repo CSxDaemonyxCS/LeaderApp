@@ -7,6 +7,10 @@ Base path: `/api/v1`
 This contract describes the API consumed by `flutter_app`. The field names,
 enum values, and nesting below match the Dart `fromJson` / `toJson` methods.
 
+Features built **frontend-first**, whose contract is not agreed yet, are not in
+this file: they live in `FRONTEND-BACKEND-INTEGRATION.md` until their payload
+and status codes are settled, and then move here.
+
 ## Transport and authentication
 
 - Production traffic uses HTTPS.
@@ -62,7 +66,49 @@ All non-success responses use:
 - `validation` — HTTP `422`
 - `authentication_expired` — HTTP `401`
 
-An unknown code is shown as a generic failure using `error.message`.
+### Frontend consumption (RFC 9457-ready)
+
+The client models every error as a typed `Problem` (`lib/core/problem/`),
+shaped so a future **RFC 9457 (`application/problem+json`)** response drops in
+without touching screens or error architecture. Rules the backend contract must
+respect:
+
+- **The `code` is the only thing frontend flow branches on.** `error.message`
+  / `detail` / `title` are diagnostics and last-resort fallback only, never
+  product copy for a recognized code, and never a branch key.
+- A **code this client version does not recognize** is safe: it renders a
+  generic localized fallback ("تعذر إكمال العملية"), not `error.message`, and
+  is not assumed retryable.
+- The wire spelling above (`snake_case`) is what the client parses today; it is
+  defined in one place (`ProblemCode.wire`) and can move to another convention
+  cheaply.
+
+Still open (see `FRONTEND-BACKEND-INTEGRATION.md` §2): whether the envelope
+becomes literal RFC 9457 members (`type`/`title`/`status`/`detail`/`instance` +
+`code` extension), the field-error key shape, and whether a safe support
+reference id is provided.
+
+`426 Upgrade Required` is not part of this contract yet. The client handles it
+as a blocking application state and expects its body to use the shared Problem
+Details contract with a `upgrade_required` code. See
+`FRONTEND-BACKEND-INTEGRATION.md` §1 and §2.
+
+`stale_write` (also `HTTP 409`, distinct from the `conflict` code above) is
+likewise not part of this contract yet, but the client already recognises it:
+`ProblemCode.staleWrite` — an **optimistic-concurrency** version mismatch on a
+versioned write, never the same thing as the business-rule `conflict` code.
+The full contract (the `version` token, what a `stale_write` body must carry,
+and how a conflict is resolved) is decided in
+`FRONTEND-BACKEND-INTEGRATION.md` §5.
+
+Write requests are **not idempotent in `v1`**, and no `/sync` endpoint exists
+yet. The client already has a local-first write foundation that mints one
+UUIDv7 identity per logical write and will send it as `Idempotency-Key` on the
+future write/sync transport; the backend contract for that (header name,
+in-progress / invalid-reuse codes, retention) is open in
+`FRONTEND-BACKEND-INTEGRATION.md` §3, and the related optimistic-concurrency
+contract (record `version`, stale-write response contents, conflict
+resolution/idempotency) is decided in `FRONTEND-BACKEND-INTEGRATION.md` §5.
 
 ## Canonical model payloads
 
@@ -238,12 +284,27 @@ when present, is already masked by the server.
       "attendance": "present",
       "phoneMasked": "+963 9xx xxx 123"
     }
+  ],
+  "corrections": [
+    {
+      "id": "corr_1",
+      "memberId": "m_123",
+      "before": { "status": "notCheckedIn" },
+      "after": { "status": "checkedIn", "checkInAt": "2026-07-09T08:03:00.000" },
+      "reason": "نسي المشرف تسجيل الدخول وقت الشفت",
+      "author": { "id": "u_9", "displayName": "أحمد المشرف" },
+      "correctedAt": "2026-07-12T10:00:00.000"
+    }
   ]
 }
 ```
 
 Hours are whole local-clock hours in the range accepted by the backend.
-`attendees` contains full `TeamMember` payloads.
+`attendees` contains full `TeamMember` payloads. `corrections` is append-only
+(oldest first), omitted or empty when the shift has never been corrected —
+see `ShiftRepository.addAttendanceCorrection` and
+`FRONTEND-BACKEND-INTEGRATION.md` §6. `author.id` is for internal
+traceability only; the client never renders it, only `author.displayName`.
 
 ### InventoryItem
 
@@ -371,6 +432,46 @@ attendance values.
 ```
 
 `activeShift` and `lockRemainingSec` are optional.
+
+### AppNotification
+
+One row of the Notifications Center. `target` is a pointer, never a snapshot:
+the client re-reads the record it names at the moment the user taps the row,
+which is what makes a deleted shift a handled state rather than a crash.
+
+```json
+{
+  "id": "shiftUnderstaffed:sh_412",
+  "kind": "shiftUnderstaffed",
+  "occurredAt": "2026-09-05T14:00:00+03:00",
+  "count": 2,
+  "recordLabel": "مركز الشعلان",
+  "target": { "type": "shift", "detachmentId": "d_12", "shiftId": "sh_412" },
+  "isRead": false
+}
+```
+
+`kind` is one of `shiftUnderstaffed`, `shiftAttendanceMissing`,
+`shiftStartingSoon`, `stockDepleted`, `stockLow`, `stockExpiring`. The two
+remaining client-side kinds (`syncConflict`, `syncFailed`) are derived from
+the local outbox and are **never** expected on this payload.
+
+`target.type` is one of `shift`, `storage`, `review`, `sync`. An unrecognised
+`type` is dropped by the client, and the row then renders as informational
+rather than sending the user somewhere arbitrary. A row with no `target` at
+all is valid and renders as informational — that is the shape a future
+server-sent announcement takes.
+
+**`id` must be stable for as long as the condition is.** Read state is keyed
+by it, and the client rebuilds its own derived feed on every load; an id
+regenerated per fetch would silently un-read every row the user had already
+seen. `<kind>:<record id>` is what the client generates and what it expects
+back.
+
+`count` is the magnitude behind the row — volunteers still missing, attendance
+still unrecorded, units left — and `0` when the kind has no count.
+`recordLabel` is a real name from the record (a centre, a stock item), never
+an id and never an internal tag.
 
 ### NotificationPrefs
 
@@ -701,6 +802,62 @@ Request:
 
 Response `200`: updated `Shift` JSON.
 
+**One-hour ordinary edit window.** This endpoint — and its check-in/check-out
+equivalents — is only valid while the shift's real end time (see
+`Shift.crossesMidnight` for how an overnight shift's end is computed) plus
+one hour has not yet passed, evaluated against **server time**, not a client
+timestamp. The frontend enforces the same window client-side
+(`lib/features/shift/domain/attendance_policy.dart`, `AttendanceWindow`) —
+this is a UX convenience only; the client check is not a security boundary
+(`CAPABILITIES.md` §0) and the server must independently reject a late
+attempt through this endpoint with `409 stale_write`-adjacent semantics —
+concretely, a distinct wire code (the frontend mock uses
+`attendance_window_expired`; the real wire code is a
+`Backend contract decision required` — see §6 below). See
+`FRONTEND-BACKEND-INTEGRATION.md` §6 for the full contract, including
+`addAttendanceCorrection` below, which is the only endpoint that remains
+valid after this window closes.
+
+#### `ShiftRepository.addAttendanceCorrection`
+
+`POST /api/v1/shifts/{shiftId}/members/{memberId}/attendance-corrections` —
+access bearer required, and the bearer must hold
+`shift.attendance.override` in the shift's detachment. Available
+**indefinitely** — no time-window check applies to this endpoint.
+
+Request:
+
+```json
+{
+  "status": "checkedIn",
+  "checkInAt": "2026-07-09T08:03:00.000",
+  "checkOutAt": null,
+  "reason": "نسي المشرف تسجيل الدخول وقت الشفت",
+  "correctedAt": "2026-07-12T10:00:00.000"
+}
+```
+
+`status` uses the same values as `TeamMember.attendance`
+(`notCheckedIn`/`checkedIn`/`checkedOut`/`absent`). `reason` is required and
+must be non-empty after the same normalization the frontend already applies
+(trimmed, internal whitespace collapsed) — the server must reject a blank or
+whitespace-only reason with `validation`, never accept it silently.
+`correctedAt` is advisory (what the client's clock read); a real backend
+should additionally stamp its own server-time value and treat that as
+authoritative for the audit trail.
+
+Response `200`: updated `Shift` JSON, with the new correction appended to a
+`corrections` array (see `Shift` below) and the shift's live attendance
+fields (`attendance`/`checkInAt`/`checkOutAt` on the affected member) updated
+to the corrected values. **Append-only**: a correction is never returned by
+any endpoint that edits or removes an earlier one — there is no
+`PATCH`/`DELETE` on this resource, by design (`FRONTEND-BACKEND-INTEGRATION.md`
+§6).
+
+A checkout before its check-in returns `validation` with code
+`checkout_before_checkin`, matching `markAttendance`'s own rule. A missing
+shift or member returns `not_found`.
+
 ### Inventory
 
 #### `InventoryRepository.listForDetachment`
@@ -820,11 +977,70 @@ Response `200`: updated `WorkshopParticipant` JSON.
 
 #### `HomeRepository.summary`
 
-`GET /api/v1/home/summary` — access bearer required
+`GET /api/v1/home/summary?detachmentId=<id>` — access bearer required
 
-Request: no body.
+Request: no body. `detachmentId` is required — the Today dashboard renders one
+detachment at a time (`DETACHMENT-SCOPING.md` §4), and the client picks which.
 
-Response `200`: `HomeSummary` JSON.
+Response `200`: `HomeSummary` JSON — the day's operational snapshot for that
+detachment, joined server-side so the dashboard costs one round trip rather
+than three:
+
+- `detachmentId`, `detachmentName`, `region`, `mainCenter`
+- `shifts` — every shift dated yesterday, today, or tomorrow, each the same
+  `Shift` shape the schedule endpoints return. Three days because "running
+  now" and "next" are clock questions: a 20:00–02:00 shift dated yesterday is
+  still running at 01:00, and after the last shift of today the next one is
+  tomorrow's. The client resolves current/next from real timestamps.
+- `rosterCount`
+- `storageStatus` — one of `empty`, `healthy`, `expiring`, `low`, `depleted`
+- `lowStockCount`, `expiringSoonCount`
+
+Response `403` for a detachment the caller may not see, `404` for one that
+does not exist — the client renders each as its own state rather than
+silently swapping in another detachment.
+
+The dashboard's remaining signals (queued writes, a failed sync run, a
+conflict awaiting review) are **client-side** and are never expected on this
+payload.
+
+### Notifications
+
+Not implemented by any backend yet. The client ships a repository seam and a
+mock that **derives** this feed by joining the shift and inventory data it
+already holds, so every row points at a record that really exists. These are
+the shapes a real implementation is expected to serve.
+
+#### `NotificationRepository.feed`
+
+`GET /api/v1/notifications?detachmentId=<id>` — access bearer required
+
+Request: no body. `detachmentId` is required, for the same reason
+`home/summary` requires it: the centre renders one detachment at a time.
+
+Response `200`: `{ "notifications": [ AppNotification, ... ] }` — every
+condition the detachment's records currently raise, **already filtered to what
+the caller may see**. The client filters again by capability as a UX gate, but
+that is not the boundary: a notification the caller has no grant for must not
+be in the payload at all.
+
+Response `403` / `404` as for `home/summary`.
+
+The client sorts and groups the rows itself, so no order is required.
+
+#### Read state
+
+`PUT /api/v1/notifications/read` — access bearer required
+
+Request: `{ "ids": ["shiftUnderstaffed:sh_412", ...] }`. Idempotent: an id
+already marked read is not an error.
+
+Response `200`: `{ "readIds": [...] }` — the caller's complete read set, so
+the client can reconcile rather than assume.
+
+Read state is **per user**, and covers ids the server never issued: the
+client's own `syncConflict` / `syncFailed` rows are stored in the same set.
+An unrecognised id must therefore be stored, not rejected.
 
 ### Settings
 

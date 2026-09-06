@@ -12,6 +12,7 @@ import '../../../core/widgets/sheet_scaffold.dart';
 import '../../../l10n/strings.dart';
 import '../data/shift_providers.dart';
 import '../domain/shift_models.dart';
+import 'repeat_days_picker.dart';
 
 /// Create or edit one shift.
 ///
@@ -33,6 +34,7 @@ Future<bool> showShiftEditor({
     title: existing == null
         ? '${S.addShift} · ${AppDate.weekdayOf(date)}'
         : S.editShift,
+    expanded: true,
     child: _ShiftEditor(
       detachmentId: detachmentId,
       date: date,
@@ -66,16 +68,31 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
   late int _start;
   late int _end;
   late int _needed;
-  bool _repeat = false;
+
+  /// The anchor day, always locked on. Extra days here mean the shift repeats.
+  late final DateTime _anchorDay;
+  late Set<DateTime> _repeatDays;
+
+  /// Repeat days that cannot be unpicked: the anchor, and (in edit mode) any
+  /// day whose materialised shift already has people on it.
+  late Set<DateTime> _lockedDays;
+  bool _loadingRepeat = false;
+
   bool _busy = false;
+  String? _error;
+  final _formKey = GlobalKey<FormState>();
 
   bool get _isNew => widget.existing == null;
+
+  /// The rolling window the picker offers: 21 days from the anchor.
+  static const _repeatWindowDays = 21;
 
   @override
   void initState() {
     super.initState();
     final e = widget.existing;
-    _center = TextEditingController(text: e?.centerName ?? widget.defaultCenter);
+    _center =
+        TextEditingController(text: e?.centerName ?? widget.defaultCenter);
     // A new shift opens on the morning preset rather than on an empty form.
     // A default that is right most of the time is the difference between
     // "fill this in" and "confirm this".
@@ -84,6 +101,36 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
     _start = e?.startMinutes ?? times!.$1;
     _end = e?.endMinutes ?? times!.$2;
     _needed = e?.needed ?? 6;
+
+    _anchorDay = dateOnly(widget.date);
+    _repeatDays = {_anchorDay};
+    _lockedDays = {_anchorDay};
+
+    // Editing a shift that already repeats: pull the template's day set so the
+    // picker opens showing every day it runs, with the staffed ones locked.
+    if (e?.templateId != null) {
+      _loadingRepeat = true;
+      Future.microtask(() => _loadRepeatDays(e!.templateId!));
+    }
+  }
+
+  Future<void> _loadRepeatDays(String templateId) async {
+    final result =
+        await ref.read(shiftRepositoryProvider).shiftsForTemplate(templateId);
+    if (!mounted) return;
+    final shifts = result.when(
+      success: (data, {stale = false}) => data,
+      failure: (_, __) => const <Shift>[],
+      offline: (_) => const <Shift>[],
+    );
+    setState(() {
+      _loadingRepeat = false;
+      for (final s in shifts) {
+        final day = dateOnly(s.date);
+        _repeatDays.add(day);
+        if (s.attendees.isNotEmpty) _lockedDays.add(day);
+      }
+    });
   }
 
   @override
@@ -108,10 +155,6 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
     final picked = await showTimePicker(
       context: context,
       initialTime: TimeOfDay(hour: current ~/ 60, minute: current % 60),
-      builder: (context, child) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: child!,
-      ),
     );
     if (picked == null) return;
     setState(() {
@@ -133,151 +176,249 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
     final c = context.c;
     final crosses = _end <= _start;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(AppSpacing.lg),
+    return Form(
+      key: _formKey,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (_isNew) ...[
-            Row(children: [
-              Icon(Icons.lightbulb_outline_rounded, size: 15, color: c.ink3),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(S.guideAddShift,
-                    style:
-                        TextStyle(color: c.ink3, fontSize: 12, height: 1.5)),
-              ),
-            ]),
-            const SizedBox(height: AppSpacing.md),
-          ],
-
-          const _Label(S.shiftPeriod),
-          const SizedBox(height: AppSpacing.sm),
-          Row(children: [
-            for (final p in ShiftPeriod.values) ...[
-              Expanded(
-                child: _PeriodTile(
-                  period: p,
-                  selected: _period == p,
-                  onTap: () => _pickPeriod(p),
-                ),
-              ),
-              if (p != ShiftPeriod.values.last) const SizedBox(width: 6),
-            ],
-          ]),
-
-          const SizedBox(height: AppSpacing.lg),
-          Row(children: [
-            Expanded(
-              child: _TimeField(
-                label: S.shiftStart,
-                value: AppDate.hm(_start),
-                onTap: () => _pickTime(isStart: true),
+          Expanded(
+            child: SingleChildScrollView(
+              key: const Key('shift-form-scroll'),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_isNew) ...[
+                    Row(children: [
+                      Icon(Icons.lightbulb_outline_rounded,
+                          size: 15, color: c.ink3),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(S.guideAddShift,
+                            style: TextStyle(
+                                color: c.ink3, fontSize: 12, height: 1.5)),
+                      ),
+                    ]),
+                    const SizedBox(height: AppSpacing.md),
+                  ],
+                  const _Label(S.shiftPeriod),
+                  const SizedBox(height: AppSpacing.sm),
+                  Row(children: [
+                    for (final p in ShiftPeriod.values) ...[
+                      Expanded(
+                        child: _PeriodTile(
+                          period: p,
+                          selected: _period == p,
+                          onTap: () => _pickPeriod(p),
+                        ),
+                      ),
+                      if (p != ShiftPeriod.values.last)
+                        const SizedBox(width: 6),
+                    ],
+                  ]),
+                  const SizedBox(height: AppSpacing.lg),
+                  Row(children: [
+                    Expanded(
+                      child: _TimeField(
+                        label: S.shiftStart,
+                        value: AppDate.hm(_start),
+                        onTap: () => _pickTime(isStart: true),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: _TimeField(
+                        label: S.shiftEnd,
+                        value: AppDate.hm(_end),
+                        onTap: () => _pickTime(isStart: false),
+                      ),
+                    ),
+                  ]),
+                  if (crosses) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Row(children: [
+                      Icon(Icons.nightlight_round, size: 14, color: c.info),
+                      const SizedBox(width: 6),
+                      Text(S.crossesMidnight,
+                          style: TextStyle(color: c.info, fontSize: 12)),
+                    ]),
+                  ],
+                  const SizedBox(height: AppSpacing.lg),
+                  const _Label(S.shiftCenter),
+                  const SizedBox(height: 6),
+                  TextFormField(
+                    controller: _center,
+                    decoration: const InputDecoration(
+                        hintText: S.detachmentCenterPlaceholder),
+                    textInputAction: TextInputAction.done,
+                    validator: (value) => value == null || value.trim().isEmpty
+                        ? S.required
+                        : null,
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  const _Label(S.shiftNeededLabel),
+                  const SizedBox(height: 6),
+                  _Stepper(
+                    value: _needed,
+                    min: 1,
+                    max: 40,
+                    onChanged: (v) => setState(() => _needed = v),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(S.shiftNeededHelp,
+                      style:
+                          TextStyle(color: c.ink3, fontSize: 12, height: 1.5)),
+                  const SizedBox(height: AppSpacing.lg),
+                  RepeatDaysPicker(
+                    firstDay: _anchorDay,
+                    windowDays: _repeatWindowDays,
+                    selected: _repeatDays,
+                    locked: _lockedDays,
+                    loading: _loadingRepeat,
+                    onToggle: (day) => setState(() {
+                      if (_lockedDays.contains(day)) return;
+                      if (!_repeatDays.remove(day)) _repeatDays.add(day);
+                    }),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                ],
               ),
             ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: _TimeField(
-                label: S.shiftEnd,
-                value: AppDate.hm(_end),
-                onTap: () => _pickTime(isStart: false),
-              ),
-            ),
-          ]),
-          if (crosses) ...[
-            const SizedBox(height: AppSpacing.sm),
-            Row(children: [
-              Icon(Icons.nightlight_round, size: 14, color: c.info),
-              const SizedBox(width: 6),
-              Text(S.crossesMidnight,
-                  style: TextStyle(color: c.info, fontSize: 12)),
-            ]),
-          ],
-
-          const SizedBox(height: AppSpacing.lg),
-          const _Label(S.shiftCenter),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _center,
-            decoration:
-                const InputDecoration(hintText: S.detachmentCenterPlaceholder),
           ),
-
-          const SizedBox(height: AppSpacing.lg),
-          const _Label(S.shiftNeededLabel),
-          const SizedBox(height: 6),
-          _Stepper(
-            value: _needed,
-            min: 1,
-            max: 40,
-            onChanged: (v) => setState(() => _needed = v),
-          ),
-          const SizedBox(height: 6),
-          Text(S.shiftNeededHelp,
-              style: TextStyle(color: c.ink3, fontSize: 12, height: 1.5)),
-
-          if (_isNew) ...[
-            const SizedBox(height: AppSpacing.lg),
-            _RepeatSwitch(
-              value: _repeat,
-              weekday: widget.date.weekday,
-              onChanged: (v) => setState(() => _repeat = v),
-            ),
-          ],
-
-          const SizedBox(height: AppSpacing.xl),
-          SizedBox(
+          Container(
+            key: const Key('shift-sticky-action'),
             width: double.infinity,
-            child: FilledButton(
-              onPressed: _busy ? null : _save,
-              child: Text(_isNew ? S.addShift : S.saveChanges),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.md,
+              AppSpacing.lg,
+              AppSpacing.md,
+            ),
+            decoration: BoxDecoration(
+              color: c.bg,
+              border: Border(top: BorderSide(color: c.line)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_error != null) ...[
+                  Text(
+                    _error!,
+                    key: const Key('shift-save-error'),
+                    style: TextStyle(color: c.crit, fontSize: 12),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                ],
+                FilledButton(
+                  key: const Key('shift-save-button'),
+                  // Block save until the existing repeat set has loaded, or a
+                  // fast save would reconcile against just the anchor day and
+                  // drop the other occurrences.
+                  onPressed: (_busy || _loadingRepeat) ? null : _save,
+                  child: _busy
+                      ? SizedBox.square(
+                          dimension: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: c.primaryInk,
+                          ),
+                        )
+                      : Text(_isNew ? S.addShift : S.saveChanges),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
         ],
       ),
     );
   }
 
   Future<void> _save() async {
+    if (_busy) return;
+    FocusScope.of(context).unfocus();
+    if (!(_formKey.currentState?.validate() ?? false)) return;
     if (_start == _end) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text(S.startAfterEnd)));
+      setState(() => _error = S.startAfterEnd);
       return;
     }
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     final repo = ref.read(shiftRepositoryProvider);
-    final result = _isNew
-        ? await repo.create(
-            detachmentId: widget.detachmentId,
-            date: widget.date,
-            centerName: _center.text.trim(),
-            startMinutes: _start,
-            endMinutes: _end,
-            needed: _needed,
-            repeatWeekly: _repeat,
-          )
-        : await repo.update(widget.existing!.copyWith(
-            centerName: _center.text.trim(),
-            startMinutes: _start,
-            endMinutes: _end,
-            needed: _needed,
-          ));
+    // Days other than the anchor mean the shift repeats.
+    final extraDays = _repeatDays.where((d) => d != _anchorDay).toList()
+      ..sort();
+
+    String? errorMessage;
+    bool? offline;
+    String? anchorId = widget.existing?.id;
+
+    if (_isNew) {
+      final created = await repo.create(
+        detachmentId: widget.detachmentId,
+        date: widget.date,
+        centerName: _center.text.trim(),
+        startMinutes: _start,
+        endMinutes: _end,
+        needed: _needed,
+        repeatOn: extraDays,
+      );
+      created.when(
+        success: (shift, {stale = false}) => anchorId = shift.id,
+        failure: (message, _) => errorMessage = message,
+        offline: (_) => offline = true,
+      );
+    } else {
+      final updated = await repo.update(widget.existing!.copyWith(
+        centerName: _center.text.trim(),
+        startMinutes: _start,
+        endMinutes: _end,
+        needed: _needed,
+      ));
+      updated.when(
+        success: (_, {stale = false}) {},
+        failure: (message, _) => errorMessage = message,
+        offline: (_) => offline = true,
+      );
+
+      // Reconcile the repeat set on save — no separate "apply" step. Only run
+      // it when there is something to reconcile: an edit that touched the day
+      // set, or a shift that already sits behind a template.
+      final touchesRepeat =
+          extraDays.isNotEmpty || widget.existing!.templateId != null;
+      if (errorMessage == null &&
+          offline != true &&
+          anchorId != null &&
+          touchesRepeat) {
+        final reconciled =
+            await repo.updateRepeat(anchorId, _repeatDays.toList());
+        reconciled.when(
+          success: (_, {stale = false}) {},
+          failure: (message, _) => errorMessage = message,
+          offline: (_) => offline = true,
+        );
+      }
+    }
 
     if (!mounted) return;
     setState(() => _busy = false);
-    result.when(
-      success: (_, {stale = false}) {
-        ref.invalidate(weekShiftsProvider);
-        ref.invalidate(todaysShiftsProvider);
-        ref.invalidate(shiftTemplatesProvider);
-        Navigator.of(context).pop(true);
-      },
-      failure: (message, _) => ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message))),
-      offline: (_) => ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text(S.offlineTitle))),
-    );
+    if (errorMessage != null) {
+      setState(() => _error = errorMessage);
+      return;
+    }
+    if (offline == true) {
+      setState(() => _error = S.offlineTitle);
+      return;
+    }
+    ref.invalidate(weekShiftsProvider);
+    ref.invalidate(todaysShiftsProvider);
+    ref.invalidate(shiftTemplatesProvider);
+    ref.invalidate(templateOccurrencesProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.of(context).pop(true);
+    messenger.showSnackBar(const SnackBar(content: Text(S.shiftSaved)));
   }
 }
 
@@ -383,15 +524,20 @@ class _TimeField extends StatelessWidget {
               border: Border.all(color: c.line2),
               borderRadius: BorderRadius.circular(AppRadii.lg),
             ),
-            child: Row(children: [
-              Icon(Icons.schedule_rounded, size: 18, color: c.ink3),
-              const SizedBox(width: 8),
-              // A clock reads left-to-right even in an RTL layout.
-              Directionality(
-                textDirection: TextDirection.ltr,
-                child: Text(value, style: AppTypography.digits(c.ink, size: 16)),
-              ),
-            ]),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Icon(Icons.schedule_rounded, size: 18, color: c.ink3),
+                // A clock reads left-to-right even in an RTL layout.
+                Directionality(
+                  textDirection: TextDirection.ltr,
+                  child:
+                      Text(value, style: AppTypography.digits(c.ink, size: 16)),
+                ),
+              ],
+            ),
           ),
         ),
       ],
@@ -477,55 +623,6 @@ class _Round extends StatelessWidget {
         ),
         child: Icon(icon, size: 20, color: enabled ? c.primary : c.ink3),
       ),
-    );
-  }
-}
-
-class _RepeatSwitch extends StatelessWidget {
-  const _RepeatSwitch({
-    required this.value,
-    required this.weekday,
-    required this.onChanged,
-  });
-
-  final bool value;
-  final int weekday;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.c;
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: value ? c.primaryTint : c.surface,
-        border: Border.all(color: value ? c.primary : c.line),
-        borderRadius: BorderRadius.circular(AppRadii.lg),
-      ),
-      child: Row(children: [
-        Icon(Icons.repeat_rounded,
-            size: 18, color: value ? c.primary : c.ink3),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${S.repeatWeekly} · ${AppDate.weekdayName(weekday)}',
-                style: TextStyle(
-                  color: value ? c.primary : c.ink,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(S.repeatWeeklyHelp,
-                  style: TextStyle(color: c.ink3, fontSize: 11, height: 1.4)),
-            ],
-          ),
-        ),
-        Switch(value: value, onChanged: onChanged),
-      ]),
     );
   }
 }

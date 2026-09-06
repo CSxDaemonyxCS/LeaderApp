@@ -1,6 +1,35 @@
-enum TeamRole { lead, medic, trainee, volunteer }
+/// The only four roster roles supported by the application.
+///
+/// Older mock payloads used `lead`, `medic`, `trainee`, and `volunteer`.
+/// [teamRoleFromWire] keeps those records readable while every new write uses
+/// the names below.
+enum TeamRole { shiftSupervisor, administrator, followUp, member }
 
-enum AttendanceState { present, late, absent, notInvited }
+/// A shift assignment's attendance state.
+enum AttendanceState { notCheckedIn, checkedIn, checkedOut, absent }
+
+/// Collapses leading, trailing, and repeated whitespace.
+String normalizeMemberName(String value) =>
+    value.trim().replaceAll(RegExp(r'\s+'), ' ');
+
+/// A comparison key for fast, whitespace-tolerant, case-insensitive search.
+String memberNameKey(String value) => normalizeMemberName(value).toLowerCase();
+
+TeamRole teamRoleFromWire(String value) => switch (value) {
+      'shiftSupervisor' || 'lead' => TeamRole.shiftSupervisor,
+      'administrator' || 'medic' => TeamRole.administrator,
+      'followUp' || 'trainee' => TeamRole.followUp,
+      'member' || 'volunteer' => TeamRole.member,
+      _ => TeamRole.member,
+    };
+
+AttendanceState attendanceStateFromWire(String value) => switch (value) {
+      'checkedIn' || 'present' || 'late' => AttendanceState.checkedIn,
+      'checkedOut' => AttendanceState.checkedOut,
+      'absent' => AttendanceState.absent,
+      'notCheckedIn' || 'notInvited' => AttendanceState.notCheckedIn,
+      _ => AttendanceState.notCheckedIn,
+    };
 
 class TeamMember {
   const TeamMember({
@@ -13,6 +42,8 @@ class TeamMember {
     required this.detachmentId,
     required this.attendance,
     this.phoneMasked,
+    this.checkInAt,
+    this.checkOutAt,
   });
 
   final String id;
@@ -45,15 +76,18 @@ class TeamMember {
   final AttendanceState attendance;
   final String? phoneMasked;
 
+  /// These timestamps belong to this member's projection inside a shift.
+  /// Roster records leave them null; the shift repository hydrates the member
+  /// identity while preserving the assignment-specific values.
+  final DateTime? checkInAt;
+  final DateTime? checkOutAt;
+
   /// First letter of the first two words. Arabic has no case, so this is the
   /// whole rule; a single-word name yields one letter rather than a padded
   /// two.
   static String initialsOf(String name) {
     final words = name.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty);
-    return words
-        .take(2)
-        .map((w) => String.fromCharCode(w.runes.first))
-        .join();
+    return words.take(2).map((w) => String.fromCharCode(w.runes.first)).join();
   }
 
   TeamMember copyWith({
@@ -62,10 +96,14 @@ class TeamMember {
     String? personalNumber,
     TeamRole? role,
     AttendanceState? attendance,
+    DateTime? checkInAt,
+    DateTime? checkOutAt,
+    bool clearCheckIn = false,
+    bool clearCheckOut = false,
   }) =>
       TeamMember(
         id: id,
-        name: name ?? this.name,
+        name: name == null ? this.name : normalizeMemberName(name),
         initials: name == null ? initials : initialsOf(name),
         department: department ?? this.department,
         personalNumber: personalNumber ?? this.personalNumber,
@@ -73,19 +111,29 @@ class TeamMember {
         detachmentId: detachmentId,
         attendance: attendance ?? this.attendance,
         phoneMasked: phoneMasked,
+        checkInAt: clearCheckIn ? null : checkInAt ?? this.checkInAt,
+        checkOutAt: clearCheckOut ? null : checkOutAt ?? this.checkOutAt,
       );
 
   factory TeamMember.fromJson(Map<String, dynamic> j) => TeamMember(
         id: j['id'] as String,
-        name: j['name'] as String,
-        initials: j['initials'] as String,
-        department: j['department'] as String,
-        personalNumber: j['personalNumber'] as String,
-        role: TeamRole.values.firstWhere((r) => r.name == j['role']),
+        name: normalizeMemberName(j['name'] as String),
+        initials: (j['initials'] as String?) ??
+            initialsOf(normalizeMemberName(j['name'] as String)),
+        department: (j['department'] as String?) ?? '',
+        personalNumber: (j['personalNumber'] as String?) ?? '',
+        role: teamRoleFromWire((j['role'] as String?) ?? 'member'),
         detachmentId: j['detachmentId'] as String,
-        attendance: AttendanceState.values
-            .firstWhere((a) => a.name == j['attendance']),
+        attendance: attendanceStateFromWire(
+          (j['attendance'] as String?) ?? 'notCheckedIn',
+        ),
         phoneMasked: j['phoneMasked'] as String?,
+        checkInAt: j['checkInAt'] == null
+            ? null
+            : DateTime.parse(j['checkInAt'] as String),
+        checkOutAt: j['checkOutAt'] == null
+            ? null
+            : DateTime.parse(j['checkOutAt'] as String),
       );
 
   Map<String, dynamic> toJson() => {
@@ -98,5 +146,7 @@ class TeamMember {
         'detachmentId': detachmentId,
         'attendance': attendance.name,
         if (phoneMasked != null) 'phoneMasked': phoneMasked,
+        if (checkInAt != null) 'checkInAt': checkInAt!.toIso8601String(),
+        if (checkOutAt != null) 'checkOutAt': checkOutAt!.toIso8601String(),
       };
 }

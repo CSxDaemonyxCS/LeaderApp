@@ -206,10 +206,10 @@ class _ParticipantCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.c;
     final (attendanceKind, attendanceLabel) = switch (participant.attendance) {
-      AttendanceState.present => (StatusKind.ok, S.present),
-      AttendanceState.late => (StatusKind.warn, S.late),
+      AttendanceState.checkedIn => (StatusKind.ok, S.checkedIn),
+      AttendanceState.checkedOut => (StatusKind.info, S.checkedOut),
       AttendanceState.absent => (StatusKind.crit, S.absent),
-      AttendanceState.notInvited => (StatusKind.muted, S.notInvited),
+      AttendanceState.notCheckedIn => (StatusKind.muted, S.notCheckedIn),
     };
     final kindLabel =
         participant.kind == ParticipantKind.member ? S.kindMember : S.kindGuest;
@@ -282,10 +282,14 @@ class _AttendancePicker extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.c;
     const options = [
-      (AttendanceState.present, S.present, Icons.check_circle_rounded),
-      (AttendanceState.late, S.late, Icons.schedule_rounded),
+      (AttendanceState.checkedIn, S.checkedIn, Icons.check_circle_rounded),
+      (AttendanceState.checkedOut, S.checkedOut, Icons.logout_rounded),
       (AttendanceState.absent, S.absent, Icons.cancel_rounded),
-      (AttendanceState.notInvited, S.notInvited, Icons.remove_circle_outline),
+      (
+        AttendanceState.notCheckedIn,
+        S.notCheckedIn,
+        Icons.remove_circle_outline
+      ),
     ];
     return ListView.separated(
       shrinkWrap: true,

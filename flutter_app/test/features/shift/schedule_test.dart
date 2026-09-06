@@ -21,7 +21,16 @@ String? _code<T>(Result<T> r) => r.when(
       offline: (_) => 'offline',
     );
 
-MockShiftRepository _repo() => MockShiftRepository(MockTeamRepository());
+// Frozen at the very start of "this week" — before any seeded shift in that
+// week has even started, let alone reached its one-hour attendance window —
+// so every mutation test below stays inside the ordinary window regardless
+// of which real day/time the suite happens to run on. Production passes no
+// clock and gets the real one; see `attendance_policy_test.dart` for the
+// window's own boundary tests.
+MockShiftRepository _repo() => MockShiftRepository(
+      MockTeamRepository(),
+      clock: () => startOfWeek(DateTime.now()),
+    );
 
 const _d = 'd_dam_central';
 
@@ -175,10 +184,10 @@ void main() {
       final member = shift.attendees.first;
 
       final updated = _ok(await repo.markAttendance(
-          shift.id, member.id, AttendanceState.late));
+          shift.id, member.id, AttendanceState.checkedIn));
       expect(
         updated.attendees.firstWhere((a) => a.id == member.id).attendance,
-        AttendanceState.late,
+        AttendanceState.checkedIn,
       );
 
       final removed = _ok(await repo.unassignVolunteer(shift.id, member.id));
@@ -217,22 +226,6 @@ void main() {
       );
     });
 
-    test('templates materialise into an empty week, once', () async {
-      final repo = _repo();
-      final target = startOfWeek(DateTime.now()).add(const Duration(days: 14));
-
-      final templates = _ok(await repo.templates(_d));
-      expect(templates, isNotEmpty);
-
-      final added =
-          _ok(await repo.applyTemplates(detachmentId: _d, weekStart: target));
-      expect(added, templates.length);
-      expect(
-        _ok(await repo.applyTemplates(detachmentId: _d, weekStart: target)),
-        0,
-      );
-    });
-
     test('stopping a template leaves the shifts it already made', () async {
       final repo = _repo();
       final thisWeek = startOfWeek(DateTime.now());
@@ -248,7 +241,7 @@ void main() {
   });
 
   group('shift lifecycle', () {
-    test('a repeating shift files a template; a one-off does not', () async {
+    test('picking repeat days files a template; a one-off does not', () async {
       final repo = _repo();
       final before = _ok(await repo.templates(_d)).length;
       final day = startOfWeek(DateTime.now()).add(const Duration(days: 3));
@@ -270,10 +263,22 @@ void main() {
         startMinutes: 9 * 60,
         endMinutes: 12 * 60,
         needed: 2,
-        repeatWeekly: true,
+        repeatOn: [
+          day.add(const Duration(days: 1)),
+          day.add(const Duration(days: 2)),
+        ],
       ));
       expect(_ok(await repo.templates(_d)).length, before + 1);
       expect(repeating.templateId, isNotNull);
+
+      // One shift per chosen day, all pointing at the new template.
+      final made = _ok(await repo.shiftsForTemplate(repeating.templateId!));
+      expect(made.map((s) => s.date).toSet(), {
+        day,
+        day.add(const Duration(days: 1)),
+        day.add(const Duration(days: 2)),
+      });
+      expect(made.every((s) => s.templateId == repeating.templateId), isTrue);
     });
 
     test('a zero-length shift and an empty need are refused', () async {

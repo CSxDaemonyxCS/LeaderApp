@@ -265,12 +265,13 @@ class WorkshopCard extends StatelessWidget {
                 ]),
                 const SizedBox(height: AppSpacing.md),
                 Row(children: [
-                  _mini(context, S.registeredMembers,
+                  _mini(
+                      context,
+                      S.registeredMembers,
                       '${toArabicIndic(w.registered.toString())}'
                       '/${toArabicIndic(w.capacity.toString())}'),
                   const SizedBox(width: AppSpacing.lg),
-                  _mini(context, S.guests,
-                      toArabicIndic(w.guests.toString())),
+                  _mini(context, S.guests, toArabicIndic(w.guests.toString())),
                   const Spacer(),
                   if (w.isFull)
                     const StatusChip(kind: StatusKind.warn, label: S.full)

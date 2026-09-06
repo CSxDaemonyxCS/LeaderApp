@@ -26,3 +26,6 @@ build/
 # The graph is a rebuildable artifact (`graphify update .`), and graph.json
 # runs to several MB. The .graphifyignore that scopes it IS tracked.
 graphify-out/
+
+# ---- Generated report samples (regenerate via report export flows) ----
+output/

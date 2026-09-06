@@ -17,6 +17,7 @@ sealed class Result<T> {
 class Success<T> extends Result<T> {
   const Success(this.data, {this.stale = false});
   final T data;
+
   /// True if this data came from cache after a background refresh failed —
   /// screens should show a subtle "cached" indicator.
   final bool stale;
@@ -26,7 +27,8 @@ class Success<T> extends Result<T> {
     required R Function(T data, {bool stale}) success,
     required R Function(String message, String? code) failure,
     required R Function(T? cached) offline,
-  }) => success(data, stale: stale);
+  }) =>
+      success(data, stale: stale);
 }
 
 class Failure<T> extends Result<T> {
@@ -39,7 +41,8 @@ class Failure<T> extends Result<T> {
     required R Function(T data, {bool stale}) success,
     required R Function(String message, String? code) failure,
     required R Function(T? cached) offline,
-  }) => failure(message, code);
+  }) =>
+      failure(message, code);
 }
 
 class Offline<T> extends Result<T> {
@@ -51,5 +54,6 @@ class Offline<T> extends Result<T> {
     required R Function(T data, {bool stale}) success,
     required R Function(String message, String? code) failure,
     required R Function(T? cached) offline,
-  }) => offline(cached);
+  }) =>
+      offline(cached);
 }

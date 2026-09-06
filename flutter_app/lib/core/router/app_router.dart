@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/app_version/data/app_version_providers.dart';
+import '../../features/app_version/domain/app_version_models.dart';
+import '../../features/app_version/presentation/upgrade_required_page.dart';
+import '../../features/auth/data/auth_providers.dart';
 import '../../features/auth/presentation/forgot_password_page.dart';
 import '../../features/auth/presentation/login_page.dart';
 import '../../features/auth/presentation/mfa_challenge_page.dart';
@@ -10,10 +14,15 @@ import '../../features/auth/presentation/new_device_page.dart';
 import '../../features/auth/presentation/new_password_page.dart';
 import '../../features/auth/presentation/otp_page.dart';
 import '../../features/auth/presentation/session_expired_page.dart';
+import '../../features/conflict/domain/conflict_models.dart';
+import '../../features/conflict/presentation/conflict_resolution_page.dart';
+import '../../features/conflict/presentation/conflict_resolution_route.dart';
+import '../../features/conflict/presentation/needs_review_page.dart';
 import '../../features/detachment/presentation/detachment_detail_shell.dart';
 import '../../features/detachment/presentation/detachment_edit_page.dart';
 import '../../features/detachment/presentation/detachment_list_page.dart';
 import '../../features/detachment/presentation/detachment_member_edit_page.dart';
+import '../../features/detachment/presentation/detachment_member_status_page.dart';
 import '../../features/detachment/presentation/tabs/detachment_shifts_tab.dart';
 import '../../features/detachment/presentation/tabs/detachment_stats_tab.dart';
 import '../../features/detachment/presentation/tabs/detachment_storage_tab.dart';
@@ -22,12 +31,16 @@ import '../../features/detachment/domain/report_models.dart';
 import '../../features/detachment/presentation/report_export_page.dart';
 import '../../features/detachment/presentation/report_preview_page.dart';
 import '../../features/inventory/presentation/inventory_item_edit_page.dart';
+import '../../features/notification/presentation/notifications_center_page.dart';
 import '../../features/home/presentation/home_page.dart';
 import '../../features/settings/presentation/notifications_page.dart';
 import '../../features/settings/presentation/org_info_page.dart';
+import '../../features/settings/presentation/performance_page.dart';
 import '../../features/settings/presentation/profile_page.dart';
 import '../../features/settings/presentation/security_page.dart';
 import '../../features/settings/presentation/settings_page.dart';
+import '../../features/settings/presentation/sync_page.dart';
+import '../../features/settings/presentation/themes_page.dart';
 import '../../features/shell/main_shell.dart';
 import '../../features/tenant/presentation/tenant_edit_page.dart';
 import '../../features/tenant/presentation/tenant_list_page.dart';
@@ -99,57 +112,34 @@ CustomTransitionPage<T> _sharedAxisPage<T>({
       ),
     );
 
-/// Pre-session screens. They live on the root navigator, so none of them ever
-/// shows the bottom nav.
+/// Pre-session screens, and the whole of the app that a signed-out session is
+/// allowed to reach.
+///
+/// One const map rather than eight hand-written routes, because the auth gate
+/// in `redirect` needs exactly this set of locations and a second, separately
+/// maintained copy of it is how a redirect loop gets shipped: forget `/otp`
+/// here and a signed-out user reaching the OTP step is bounced back to
+/// `/login` forever. The routes and the public set are now the same list.
+///
+/// They live on the root navigator, so none of them ever shows the bottom nav.
+const _publicPages = <String, Widget>{
+  '/login': LoginPage(),
+  '/mfa-setup': MfaSetupPage(),
+  '/mfa-challenge': MfaChallengePage(),
+  '/forgot': ForgotPasswordPage(),
+  '/otp': OtpPage(),
+  '/new-password': NewPasswordPage(),
+  '/session-expired': SessionExpiredPage(),
+  '/new-device': NewDevicePage(),
+};
+
 List<RouteBase> get _authRoutes => [
-      GoRoute(
-        path: '/login',
-        pageBuilder: (context, state) =>
-            _sharedAxisPage(key: state.pageKey, child: const LoginPage()),
-      ),
-      GoRoute(
-        path: '/mfa-setup',
-        pageBuilder: (context, state) =>
-            _sharedAxisPage(key: state.pageKey, child: const MfaSetupPage()),
-      ),
-      GoRoute(
-        path: '/mfa-challenge',
-        pageBuilder: (context, state) => _sharedAxisPage(
-          key: state.pageKey,
-          child: const MfaChallengePage(),
+      for (final entry in _publicPages.entries)
+        GoRoute(
+          path: entry.key,
+          pageBuilder: (context, state) =>
+              _sharedAxisPage(key: state.pageKey, child: entry.value),
         ),
-      ),
-      GoRoute(
-        path: '/forgot',
-        pageBuilder: (context, state) => _sharedAxisPage(
-          key: state.pageKey,
-          child: const ForgotPasswordPage(),
-        ),
-      ),
-      GoRoute(
-        path: '/otp',
-        pageBuilder: (context, state) =>
-            _sharedAxisPage(key: state.pageKey, child: const OtpPage()),
-      ),
-      GoRoute(
-        path: '/new-password',
-        pageBuilder: (context, state) => _sharedAxisPage(
-          key: state.pageKey,
-          child: const NewPasswordPage(),
-        ),
-      ),
-      GoRoute(
-        path: '/session-expired',
-        pageBuilder: (context, state) => _sharedAxisPage(
-          key: state.pageKey,
-          child: const SessionExpiredPage(),
-        ),
-      ),
-      GoRoute(
-        path: '/new-device',
-        pageBuilder: (context, state) =>
-            _sharedAxisPage(key: state.pageKey, child: const NewDevicePage()),
-      ),
     ];
 
 /// Tab 1 — the operational summary.
@@ -266,6 +256,21 @@ StatefulShellBranch get _detachmentBranch => StatefulShellBranch(
                 child: DetachmentMemberEditPage(
                   detachmentId: state.pathParameters['id']!,
                   memberId: state.pathParameters['memberId'],
+                ),
+              ),
+            ),
+
+            // The member's attendance history — opened from the roster card.
+            // A full-screen page with its own app bar, so a sibling of the
+            // detail shell rather than a child of it.
+            GoRoute(
+              path: ':id/member/:memberId/status',
+              parentNavigatorKey: _rootKey,
+              pageBuilder: (context, state) => _sharedAxisPage(
+                key: state.pageKey,
+                child: DetachmentMemberStatusPage(
+                  detachmentId: state.pathParameters['id']!,
+                  memberId: state.pathParameters['memberId']!,
                 ),
               ),
             ),
@@ -443,6 +448,27 @@ StatefulShellBranch get _moreBranch => StatefulShellBranch(
               _sharedAxisPage(key: state.pageKey, child: const SettingsPage()),
           routes: [
             GoRoute(
+              path: 'themes',
+              pageBuilder: (context, state) => _sharedAxisPage(
+                key: state.pageKey,
+                child: const ThemesPage(),
+              ),
+            ),
+            GoRoute(
+              path: 'performance',
+              pageBuilder: (context, state) => _sharedAxisPage(
+                key: state.pageKey,
+                child: const PerformancePage(),
+              ),
+            ),
+            GoRoute(
+              path: 'sync',
+              pageBuilder: (context, state) => _sharedAxisPage(
+                key: state.pageKey,
+                child: const SyncPage(),
+              ),
+            ),
+            GoRoute(
               path: 'profile',
               pageBuilder: (context, state) => _sharedAxisPage(
                 key: state.pageKey,
@@ -476,11 +502,114 @@ StatefulShellBranch get _moreBranch => StatefulShellBranch(
     );
 
 final appRouterProvider = Provider<GoRouter>((ref) {
+  // The forced-upgrade gate, handed to GoRouter as a listenable rather than
+  // read through `ref.watch`: watching would rebuild the whole GoRouter on
+  // every change and throw away the navigation stack with it. This way the
+  // router is built once and a change only re-runs `redirect`.
+  final gate = ValueNotifier<AppVersionState>(ref.read(appVersionProvider));
+  ref.listen<AppVersionState>(
+    appVersionProvider,
+    (_, next) => gate.value = next,
+  );
+  ref.onDispose(gate.dispose);
+
+  // The auth gate, held the same way and for the same reason: a signed-out
+  // session must not be able to reach a protected screen through navigation
+  // history, a preserved bottom-nav branch stack, or a deep link. Sign-out
+  // itself only clears the session — this is what makes the clearing stick.
+  final auth = ValueNotifier<AuthGate>(ref.read(authGateProvider));
+  ref.listen<AuthGate>(authGateProvider, (_, next) => auth.value = next);
+  ref.onDispose(auth.dispose);
+
   return GoRouter(
     navigatorKey: _rootKey,
     initialLocation: '/home',
     debugLogDiagnostics: false,
+    refreshListenable: Listenable.merge([gate, auth]),
+    // The one place the app can be shut. `redirect` runs on every
+    // navigation — a tab, a deep link, a `context.go` from anywhere — so
+    // while the gate is closed there is no route into the app to find, and
+    // nothing to pop back to when it opens again.
+    redirect: (context, state) {
+      final atGate = state.matchedLocation == UpgradeRequiredPage.location;
+      if (gate.value.blocksApp) {
+        return atGate ? null : UpgradeRequiredPage.location;
+      }
+      if (atGate) return '/home';
+
+      // The auth gate runs second: being signed in is no help while the app
+      // is shut, and the upgrade screen is reachable without a session.
+      //
+      // `unknown` deliberately redirects nowhere. The session read is async,
+      // so every cold start passes through it, and an offline device with no
+      // cached account is not evidence that anyone signed out — bouncing
+      // either case to the login screen would break the app for exactly the
+      // conditions it is built for. `capabilitiesProvider` still resolves to
+      // `Capabilities.none` throughout, so nothing gated is offered.
+      //
+      // TODO(security): a UX gate. The backend rejects an unauthenticated
+      // request whatever the client chose to render.
+      final destination = switch (auth.value) {
+        AuthGate.signedOut => '/login',
+        AuthGate.expired => '/session-expired',
+        AuthGate.signedIn || AuthGate.unknown => null,
+      };
+      if (destination == null) return null;
+      // Already somewhere a signed-out session belongs.
+      if (_publicPages.containsKey(state.matchedLocation)) return null;
+      return destination;
+    },
     routes: [
+      // Root navigator, so it covers the bottom nav and every other surface.
+      GoRoute(
+        path: UpgradeRequiredPage.location,
+        pageBuilder: (context, state) => _sharedAxisPage(
+          key: state.pageKey,
+          child: const UpgradeRequiredPage(),
+        ),
+      ),
+      // A substantial decision surface that must cover the bottom nav. Auto
+      // Sync must never push this route; Manual Sync, a future review list,
+      // and direct feature flows may open it with typed route arguments.
+      GoRoute(
+        path: ConflictResolutionPage.routePath,
+        pageBuilder: (context, state) {
+          final args = state.extra;
+          return _sharedAxisPage(
+            key: state.pageKey,
+            // Entered without its typed arguments — a restored deep link, a
+            // relaunch — the route rebuilds the conflict from the stored
+            // review metadata rather than dead-ending. See
+            // `ConflictResolutionRoute`.
+            child: ConflictResolutionRoute(
+              conflictId: state.pathParameters['conflictId'],
+              args: args is ConflictResolutionRouteArgs ? args : null,
+            ),
+          );
+        },
+      ),
+      // The Notifications Center. A root route beside the Needs Review inbox
+      // and for the same reason: a full surface the user opens deliberately,
+      // which therefore covers the bottom nav. Reached from the bell in the
+      // dashboard's app bar — the app's single entry point into it.
+      GoRoute(
+        path: NotificationsCenterPage.routePath,
+        pageBuilder: (context, state) => _sharedAxisPage(
+          key: state.pageKey,
+          child: const NotificationsCenterPage(),
+        ),
+      ),
+      // The Needs Review inbox. A root route for the same reason the screen
+      // it leads to is one — a substantial decision surface that covers the
+      // bottom nav — and reachable only from an explicit human action (the
+      // Settings attention row). Auto Sync still cannot navigate anywhere.
+      GoRoute(
+        path: NeedsReviewPage.routePath,
+        pageBuilder: (context, state) => _sharedAxisPage(
+          key: state.pageKey,
+          child: const NeedsReviewPage(),
+        ),
+      ),
       ..._authRoutes,
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>

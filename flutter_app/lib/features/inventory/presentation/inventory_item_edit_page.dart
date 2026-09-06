@@ -40,11 +40,14 @@ class _S extends ConsumerState<InventoryItemEditPage> {
   final _unit = TextEditingController();
   final _opening = TextEditingController(text: '0');
   final _minimum = TextEditingController(text: '5');
+  final _unitsPerStrip = TextEditingController(text: '1');
+  final _stripsPerCarton = TextEditingController(text: '1');
 
   DateTime? _expiry;
   InventoryItem? _existing;
   bool _seeded = false;
   bool _busy = false;
+  PackagingUnit _packagingUnit = PackagingUnit.individual;
 
   bool get _isNew => widget.itemId == null;
 
@@ -54,6 +57,8 @@ class _S extends ConsumerState<InventoryItemEditPage> {
     _unit.dispose();
     _opening.dispose();
     _minimum.dispose();
+    _unitsPerStrip.dispose();
+    _stripsPerCarton.dispose();
     super.dispose();
   }
 
@@ -64,6 +69,9 @@ class _S extends ConsumerState<InventoryItemEditPage> {
     _name.text = item.name;
     _unit.text = item.unit;
     _minimum.text = '${item.minimum}';
+    _unitsPerStrip.text = '${item.unitsPerStrip}';
+    _stripsPerCarton.text = '${item.stripsPerCarton}';
+    _packagingUnit = item.preferredUnit;
     _expiry = item.expiresOn;
   }
 
@@ -112,16 +120,37 @@ class _S extends ConsumerState<InventoryItemEditPage> {
             hint: S.itemNamePlaceholder,
           ),
           const SizedBox(height: AppSpacing.md),
-          _Field(
-            controller: _unit,
-            label: S.itemUnit,
-            hint: S.itemUnitPlaceholder,
+          _PackagingPicker(
+            value: _packagingUnit,
+            onChanged: (value) => setState(() => _packagingUnit = value),
           ),
           const SizedBox(height: AppSpacing.md),
           if (_isNew) ...[
             _Field(
               controller: _opening,
-              label: S.itemOpeningStock,
+              label: switch (_packagingUnit) {
+                PackagingUnit.individual => S.individualUnitsCount,
+                PackagingUnit.strip => S.stripsCount,
+                PackagingUnit.carton => S.cartonsCount,
+              },
+              hint: S.quantityPlaceholder,
+              number: true,
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
+          if (_packagingUnit != PackagingUnit.individual) ...[
+            _Field(
+              controller: _unitsPerStrip,
+              label: S.unitsPerStrip,
+              hint: S.quantityPlaceholder,
+              number: true,
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
+          if (_packagingUnit == PackagingUnit.carton) ...[
+            _Field(
+              controller: _stripsPerCarton,
+              label: S.stripsPerCarton,
               hint: S.quantityPlaceholder,
               number: true,
             ),
@@ -144,10 +173,6 @@ class _S extends ConsumerState<InventoryItemEditPage> {
                 initialDate: _expiry ?? now.add(const Duration(days: 180)),
                 firstDate: now.subtract(const Duration(days: 365)),
                 lastDate: now.add(const Duration(days: 365 * 8)),
-                builder: (context, child) => Directionality(
-                  textDirection: TextDirection.rtl,
-                  child: child!,
-                ),
               );
               if (picked != null) setState(() => _expiry = picked);
             },
@@ -187,9 +212,29 @@ class _S extends ConsumerState<InventoryItemEditPage> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     final minimum = _intOf(_minimum);
     final opening = _isNew ? _intOf(_opening) : 0;
-    if (minimum == null || opening == null) {
+    final unitsPerStrip =
+        _packagingUnit == PackagingUnit.individual ? 1 : _intOf(_unitsPerStrip);
+    final stripsPerCarton =
+        _packagingUnit == PackagingUnit.carton ? _intOf(_stripsPerCarton) : 1;
+    if (minimum == null ||
+        opening == null ||
+        unitsPerStrip == null ||
+        stripsPerCarton == null ||
+        unitsPerStrip <= 0 ||
+        stripsPerCarton <= 0) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text(S.invalidNumber)));
+      return;
+    }
+    // A strip that holds one unit, or a carton that holds one strip, is not a
+    // package — it is the metadata missing. Say so here rather than saving a
+    // medicine whose stock reads in strips but counts in loose units.
+    if (!MedicinePackaging(
+      unitsPerStrip: unitsPerStrip,
+      stripsPerCarton: stripsPerCarton,
+    ).supports(_packagingUnit)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(S.packagingMetadataRequired)));
       return;
     }
 
@@ -199,16 +244,22 @@ class _S extends ConsumerState<InventoryItemEditPage> {
         ? await repo.create(
             detachmentId: widget.detachmentId,
             name: _name.text.trim(),
-            unit: _unit.text.trim(),
+            unit: S.baseUnits,
             openingStock: opening,
             minimum: minimum,
+            openingUnit: _packagingUnit,
+            unitsPerStrip: unitsPerStrip,
+            stripsPerCarton: stripsPerCarton,
             expiresOn: _expiry,
           )
         : await repo.update(
             id: widget.itemId!,
             name: _name.text.trim(),
-            unit: _unit.text.trim(),
+            unit: _unit.text.trim().isEmpty ? S.baseUnits : _unit.text.trim(),
             minimum: minimum,
+            unitsPerStrip: unitsPerStrip,
+            stripsPerCarton: stripsPerCarton,
+            preferredUnit: _packagingUnit,
             expiresOn: _expiry,
           );
 
@@ -254,8 +305,7 @@ class _S extends ConsumerState<InventoryItemEditPage> {
     if (ok != true || !mounted) return;
 
     setState(() => _busy = true);
-    final result =
-        await ref.read(inventoryRepositoryProvider).delete(item.id);
+    final result = await ref.read(inventoryRepositoryProvider).delete(item.id);
     if (!mounted) return;
     setState(() => _busy = false);
     result.when(
@@ -270,6 +320,42 @@ class _S extends ConsumerState<InventoryItemEditPage> {
           .showSnackBar(SnackBar(content: Text(message))),
       offline: (_) => ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text(S.offlineTitle))),
+    );
+  }
+}
+
+class _PackagingPicker extends StatelessWidget {
+  const _PackagingPicker({required this.value, required this.onChanged});
+
+  final PackagingUnit value;
+  final ValueChanged<PackagingUnit> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.c;
+    const options = [
+      (PackagingUnit.individual, S.packagingIndividual),
+      (PackagingUnit.strip, S.packagingStrip),
+      (PackagingUnit.carton, S.packagingCarton),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(S.packagingUnit, style: TextStyle(color: c.ink2, fontSize: 13)),
+        const SizedBox(height: 6),
+        Row(children: [
+          for (final (unit, label) in options) ...[
+            Expanded(
+              child: ChoiceChip(
+                label: Text(label, textAlign: TextAlign.center),
+                selected: value == unit,
+                onSelected: (_) => onChanged(unit),
+              ),
+            ),
+            if (unit != PackagingUnit.carton) const SizedBox(width: 6),
+          ],
+        ]),
+      ],
     );
   }
 }

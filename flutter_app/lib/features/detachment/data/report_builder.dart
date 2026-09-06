@@ -5,6 +5,7 @@ import '../../../core/motion/animated_counter.dart';
 import '../../../core/result/result.dart';
 import '../../../l10n/strings.dart';
 import '../../inventory/data/inventory_providers.dart';
+import '../../inventory/domain/inventory_format.dart';
 import '../../inventory/domain/inventory_models.dart';
 import '../../shift/data/shift_providers.dart';
 import '../../shift/domain/shift_models.dart';
@@ -78,14 +79,18 @@ final reportProvider = FutureProvider.autoDispose
 
   // ---- Members -----------------------------------------------------------
   if (spec.has(ReportSection.members)) {
-    final roster =
-        _dataOf<List<TeamMember>>(await ref.read(teamRepositoryProvider)
-                .listForDetachment(id)) ??
-            const <TeamMember>[];
+    final roster = _dataOf<List<TeamMember>>(
+            await ref.read(teamRepositoryProvider).listForDetachment(id)) ??
+        const <TeamMember>[];
     blocks.add(ReportTable(
       S.secMembers,
-      [S.memberName, S.memberDepartment, S.memberNumber, S.memberRole,
-        S.attendanceProgress],
+      [
+        S.memberName,
+        S.memberDepartment,
+        S.memberNumber,
+        S.memberRole,
+        S.attendanceProgress
+      ],
       [
         for (final m in roster)
           [
@@ -108,9 +113,9 @@ final reportProvider = FutureProvider.autoDispose
     final rows = <List<String>>[];
     for (int w = weeks - 1; w >= 0; w--) {
       final weekStart = thisWeek.subtract(Duration(days: 7 * w));
-      final shifts = _dataOf<List<Shift>>(
-              await ref.read(shiftRepositoryProvider)
-                  .listForWeek(id, weekStart)) ??
+      final shifts = _dataOf<List<Shift>>(await ref
+              .read(shiftRepositoryProvider)
+              .listForWeek(id, weekStart)) ??
           const <Shift>[];
       for (final s in shifts) {
         rows.add([
@@ -143,17 +148,17 @@ final reportProvider = FutureProvider.autoDispose
   final wantsStock =
       spec.has(ReportSection.storage) || spec.has(ReportSection.storageLow);
   if (wantsStock) {
-    final items = _dataOf<List<InventoryItem>>(
-            await ref.read(inventoryRepositoryProvider)
-                .listForDetachment(id)) ??
+    final items = _dataOf<List<InventoryItem>>(await ref
+            .read(inventoryRepositoryProvider)
+            .listForDetachment(id)) ??
         const <InventoryItem>[];
 
     List<List<String>> tableOf(Iterable<InventoryItem> source) => [
           for (final i in source)
             [
               i.name,
-              i.unit,
-              toArabicIndic('${i.currentStock}'),
+              stockBreakdownLabel(i),
+              toArabicIndic('${i.unitsPerStrip}'),
               toArabicIndic('${i.minimum}'),
               i.expiresOn == null ? S.noExpiry : AppDate.dayMonth(i.expiresOn!),
               _levelLabel(i.level),
@@ -161,8 +166,8 @@ final reportProvider = FutureProvider.autoDispose
         ];
     const columns = [
       S.itemName,
-      S.itemUnit,
       S.currentStock,
+      S.unitsPerStrip,
       S.minimumLevel,
       S.expiresOn,
       S.status,
@@ -180,10 +185,131 @@ final reportProvider = FutureProvider.autoDispose
     }
   }
 
+  // ---- Attendance --------------------------------------------------------
+  if (spec.has(ReportSection.attendance)) {
+    final today = dateOnly(DateTime.now());
+    final from = today.subtract(Duration(days: spec.range.days - 1));
+    final shifts = _dataOf<List<Shift>>(
+          await ref.read(shiftRepositoryProvider).listForRange(id, from, today),
+        ) ??
+        const <Shift>[];
+    final attendance = AttendanceStatistics.fromShifts(shifts);
+    blocks.add(ReportFacts(S.secAttendance, [
+      (S.presentTotal, toArabicIndic('${attendance.presentCount}')),
+      (S.absentTotal, toArabicIndic('${attendance.absentCount}')),
+      (S.completedTotal, toArabicIndic('${attendance.completedCount}')),
+      (S.pendingTotal, toArabicIndic('${attendance.pendingCount}')),
+      (
+        S.attendancePercent,
+        '${toArabicIndic('${attendance.attendancePercent}')}٪'
+      ),
+    ]));
+
+    // The legacy report's first table was one row per **active roster
+    // member**, including anyone with no reviewed day at all (its query left
+    // joined attendance onto the roster). Reproduced here by walking the
+    // roster and looking each member's summary up, rather than by walking
+    // only the members who happen to appear on a shift.
+    final attendanceRoster = _dataOf<List<TeamMember>>(
+            await ref.read(teamRepositoryProvider).listForDetachment(id)) ??
+        const <TeamMember>[];
+    final summaryById = {
+      for (final member in attendance.members) member.memberId: member,
+    };
+    final summaryOrder = <MemberAttendanceSummary?>[
+      for (final member in attendanceRoster) summaryById.remove(member.id),
+    ];
+    blocks.add(ReportTable(
+      S.attendanceSummary,
+      [
+        S.memberName,
+        S.memberRole,
+        S.memberDepartment,
+        S.presentTotal,
+        S.absentTotal,
+        S.completedTotal,
+      ],
+      [
+        for (final (index, summary) in summaryOrder.indexed)
+          [
+            attendanceRoster[index].name,
+            _roleLabel(attendanceRoster[index].role),
+            attendanceRoster[index].department,
+            toArabicIndic('${summary?.presentCount ?? 0}'),
+            toArabicIndic('${summary?.absentCount ?? 0}'),
+            toArabicIndic('${summary?.completedCount ?? 0}'),
+          ],
+        // Anyone who worked a shift inside the range but is no longer on the
+        // roster still has to be accounted for; dropping them would make the
+        // totals above disagree with the table under them.
+        for (final summary in summaryById.values)
+          [
+            summary.memberName,
+            _roleLabel(summary.role),
+            '',
+            toArabicIndic('${summary.presentCount}'),
+            toArabicIndic('${summary.absentCount}'),
+            toArabicIndic('${summary.completedCount}'),
+          ],
+      ],
+    ));
+
+    for (final member in attendance.members) {
+      blocks.add(ReportTable(
+        '${member.memberName} · ${_roleLabel(member.role)}',
+        [
+          S.attendanceDate,
+          S.status,
+          S.checkInTime,
+          S.checkOutTime,
+        ],
+        [
+          // Oldest first, as the legacy history table printed it.
+          for (final record in member.recordsOldestFirst)
+            [
+              AppDate.dayMonth(record.shiftDate),
+              _attendanceLabel(record.status),
+              record.checkInAt == null
+                  ? '—'
+                  : AppDate.dayMonthTime(record.checkInAt!),
+              record.checkOutAt == null
+                  ? '—'
+                  : AppDate.dayMonthTime(record.checkOutAt!),
+            ],
+        ],
+      ));
+    }
+    // Only the days that actually have a reviewed record. Walking the whole
+    // range instead would print a row of "0٪" for every day the detachment
+    // ran no shift — over a quarter that is most of the section, and it reads
+    // as ninety days of failure rather than as no data.
+    final labels = <String>[];
+    final values = <int>[];
+    for (var offset = 0; offset < spec.range.days; offset++) {
+      final day = from.add(Duration(days: offset));
+      final reviewed = attendance.records
+          .where((record) =>
+              dateOnly(record.shiftDate) == day &&
+              (record.isPresent || record.isAbsent))
+          .toList();
+      if (reviewed.isEmpty) continue;
+      final present = reviewed.where((record) => record.isPresent).length;
+      labels.add(AppDate.dayMonth(day));
+      values.add(((present / reviewed.length) * 100).round());
+    }
+    if (values.isNotEmpty) {
+      blocks.add(ReportSeries(
+        S.attendancePercent,
+        labels,
+        values,
+        suffix: '٪',
+      ));
+    }
+  }
+
   // ---- Series ------------------------------------------------------------
-  final wantsSeries = spec.has(ReportSection.attendance) ||
-      spec.has(ReportSection.coverage) ||
-      spec.has(ReportSection.consumption);
+  final wantsSeries =
+      spec.has(ReportSection.coverage) || spec.has(ReportSection.consumption);
   if (wantsSeries) {
     final stats = _dataOf<DetachmentStats>(
         await ref.read(detachmentRepositoryProvider).stats(id));
@@ -192,17 +318,12 @@ final reportProvider = FutureProvider.autoDispose
       // labelling what is actually there rather than by inventing the rest —
       // a report that pads itself is a report nobody can trust.
       final labels = _dayLabels(stats.attendanceSeries.length);
-      if (spec.has(ReportSection.attendance)) {
-        blocks.add(ReportSeries(
-            S.secAttendance, labels, stats.attendanceSeries, suffix: '٪'));
-      }
       if (spec.has(ReportSection.coverage)) {
-        blocks.add(ReportSeries(
-            S.secCoverage, labels, stats.coverageSeries, suffix: '٪'));
+        blocks.add(ReportSeries(S.secCoverage, labels, stats.coverageSeries,
+            suffix: '٪'));
       }
       if (spec.has(ReportSection.consumption)) {
-        blocks.add(
-            ReportSeries(S.secConsumption, labels, stats.stockSeries));
+        blocks.add(ReportSeries(S.secConsumption, labels, stats.stockSeries));
       }
     }
   }
@@ -232,17 +353,17 @@ T? _dataOf<T>(Result<T> result) => result.when(
     );
 
 String _roleLabel(TeamRole role) => switch (role) {
-      TeamRole.lead => S.roleLead,
-      TeamRole.medic => S.roleMedic,
-      TeamRole.trainee => S.roleTrainee,
-      TeamRole.volunteer => S.roleVolunteer,
+      TeamRole.shiftSupervisor => S.roleShiftSupervisor,
+      TeamRole.administrator => S.roleAdministrator,
+      TeamRole.followUp => S.roleFollowUp,
+      TeamRole.member => S.roleMember,
     };
 
 String _attendanceLabel(AttendanceState state) => switch (state) {
-      AttendanceState.present => S.present,
-      AttendanceState.late => S.late,
+      AttendanceState.checkedIn => S.checkedIn,
+      AttendanceState.checkedOut => S.checkedOut,
       AttendanceState.absent => S.absent,
-      AttendanceState.notInvited => S.notInvited,
+      AttendanceState.notCheckedIn => S.notCheckedIn,
     };
 
 String _levelLabel(StockLevel level) => switch (level) {

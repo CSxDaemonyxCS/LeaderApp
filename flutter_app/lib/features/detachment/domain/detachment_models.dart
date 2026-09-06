@@ -62,8 +62,8 @@ class Detachment {
         memberCount: j['memberCount'] as int,
         weeklyShiftCount: j['weeklyShiftCount'] as int,
         coveragePercent: j['coveragePercent'] as int,
-        status: DetachmentStatus.values
-            .firstWhere((s) => s.name == j['status']),
+        status:
+            DetachmentStatus.values.firstWhere((s) => s.name == j['status']),
         notes: j['notes'] as String?,
       );
 
@@ -90,8 +90,10 @@ class DetachmentStats {
 
   /// Percent (0..100) per day of the last 7 days, oldest first.
   final List<int> attendanceSeries;
+
   /// Coverage percent per day of the last 7 days.
   final List<int> coverageSeries;
+
   /// Consumed units per day of the last 7 days.
   final List<int> stockSeries;
 

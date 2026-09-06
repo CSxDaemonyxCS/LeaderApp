@@ -23,7 +23,8 @@ Future<void> _loadRealFont() async {
   await loader.load();
 }
 
-Widget _app(Widget child, {bool disableAnimations = false, MotionLevel? level}) {
+Widget _app(Widget child,
+    {bool disableAnimations = false, MotionLevel? level}) {
   return MaterialApp(
     theme: AppTheme.light(PaletteId.slate),
     locale: const Locale('ar'),
@@ -77,8 +78,7 @@ void main() {
   });
 
   testWidgets('TabularDigits renders numerals left-to-right', (tester) async {
-    await tester.pumpWidget(
-        _app(const TabularDigits('١٢', style: style)));
+    await tester.pumpWidget(_app(const TabularDigits('١٢', style: style)));
     final one = tester.getTopLeft(find.text('١')).dx;
     final two = tester.getTopLeft(find.text('٢')).dx;
     expect(one, lessThan(two), reason: '١٢ must read 12, not 21');
@@ -86,8 +86,8 @@ void main() {
 
   testWidgets('AnimatedCounter keeps a stable width across the tween',
       (tester) async {
-    await tester.pumpWidget(_app(const AnimatedCounter(value: 88,
-        style: style)));
+    await tester
+        .pumpWidget(_app(const AnimatedCounter(value: 88, style: style)));
     final widths = <double>[];
     for (var i = 0; i < 8; i++) {
       await tester.pump(const Duration(milliseconds: 50));
@@ -120,27 +120,88 @@ void main() {
     expect(find.byType(RepaintBoundary), findsWidgets);
   });
 
-  testWidgets('user choice overrides OS reduce-motion', (tester) async {
+  testWidgets('OS reduce-motion outranks the quality level', (tester) async {
     late bool reduced;
-    await tester.pumpWidget(_app(
-      Builder(builder: (context) {
-        reduced = reduceMotion(context);
-        return const SizedBox();
-      }),
-      disableAnimations: true,
-      level: MotionLevel.full,
-    ));
-    expect(reduced, isFalse);
+    Widget probe() => Builder(builder: (context) {
+          reduced = reduceMotion(context);
+          return const SizedBox();
+        });
 
+    // Even the richest level cannot talk over an accessibility request.
     await tester.pumpWidget(_app(
-      Builder(builder: (context) {
-        reduced = reduceMotion(context);
-        return const SizedBox();
-      }),
-      disableAnimations: false,
-      level: MotionLevel.reduced,
+      probe(),
+      disableAnimations: true,
+      level: MotionLevel.maximum,
     ));
     expect(reduced, isTrue);
+
+    // With the flag off, every level animates except `performance`, which
+    // is deliberately motion-off — that is what the level promises, and it
+    // is a choice the user made rather than one made for them.
+    for (final level in MotionLevel.values) {
+      await tester.pumpWidget(_app(
+        probe(),
+        disableAnimations: false,
+        level: level,
+      ));
+      expect(
+        reduced,
+        level == MotionLevel.performance,
+        reason: '$level',
+      );
+    }
+  });
+
+  testWidgets('the quality ladder only ever gets cheaper going down',
+      (tester) async {
+    late List<MotionSpec> specs;
+    await tester.pumpWidget(_app(Builder(builder: (context) {
+      specs = MotionLevel.values.map((l) => l.spec).toList();
+      return const SizedBox();
+    })));
+
+    for (var i = 1; i < specs.length; i++) {
+      final cheaper = specs[i - 1];
+      final richer = specs[i];
+      expect(cheaper.durationScale, lessThanOrEqualTo(richer.durationScale));
+      expect(cheaper.intensity, lessThanOrEqualTo(richer.intensity));
+      expect(cheaper.blurSigma, lessThanOrEqualTo(richer.blurSigma));
+      expect(
+        cheaper.staggerMaxItems,
+        lessThanOrEqualTo(richer.staggerMaxItems),
+      );
+    }
+    // The ceiling stays cheap: maximum adds no new expensive effect over
+    // high beyond the tab cross-fade.
+    expect(MotionSpec.maximum.blurSigma, lessThanOrEqualTo(24));
+    expect(MotionSpec.maximum.crossFadeOutgoing, isTrue);
+    expect(MotionSpec.high.crossFadeOutgoing, isFalse);
+    // Each step has to differ by *kind* of work, not only by duration —
+    // otherwise five levels is one slider wearing a disguise.
+    expect(MotionSpec.performance.isInstant, isTrue,
+        reason: 'performance means animations off, not just short');
+    expect(MotionSpec.performance.ambientLoops, isFalse);
+    expect(MotionSpec.performance.hasBlur, isFalse);
+    expect(MotionSpec.performance.richShadows, isFalse);
+    expect(MotionSpec.low.isInstant, isFalse);
+    expect(MotionSpec.low.hasBlur, isFalse);
+    expect(MotionSpec.low.stagger, isFalse);
+    expect(MotionSpec.low.animatedValues, isFalse);
+    expect(MotionSpec.low.slideRoutes, isFalse);
+    expect(MotionSpec.balanced.hasBlur, isTrue);
+    expect(MotionSpec.balanced.stagger, isTrue);
+    expect(MotionSpec.balanced.animatedValues, isTrue);
+    expect(MotionSpec.balanced.slideRoutes, isTrue);
+    expect(MotionSpec.balanced.overshoot, isFalse);
+    expect(MotionSpec.high.overshoot, isTrue);
+    // The stagger cascade never outruns its sub-300ms budget.
+    for (final level in MotionLevel.values) {
+      expect(
+        level.spec.staggerMaxItems,
+        lessThanOrEqualTo(MotionTokens.staggerMaxItems),
+        reason: '$level',
+      );
+    }
   });
 
   test('motion tokens collapse to zero under reduced motion', () {

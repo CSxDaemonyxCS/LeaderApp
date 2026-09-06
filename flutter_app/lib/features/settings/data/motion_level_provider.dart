@@ -4,11 +4,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/motion/motion_level.dart';
 import 'settings_providers.dart';
 
-/// User-selectable motion level, persisted via [SettingsRepository].
+/// User-selectable animation quality, persisted via [SettingsRepository].
 ///
 /// On first read the notifier asks the repository for the stored value.
-/// If none is stored, it defaults to `reduced` when the OS reports
-/// reduce-motion (`MediaQuery.disableAnimations`), otherwise `full`.
+/// If none is stored, it seeds from the OS: `performance` when the platform
+/// reports reduce-motion, otherwise `balanced`.
+///
+/// The seed is only a starting point. Whether an accessibility request is
+/// *honoured* is decided at render time in `motionSpec`, which returns
+/// `MotionSpec.none` whenever the platform asks for animations off — so a
+/// user who later picks a richer level still gets the accessible
+/// behaviour they asked the OS for.
 ///
 /// Every setter persists immediately — no restart is needed.
 class MotionLevelController extends AsyncNotifier<MotionLevel> {
@@ -29,13 +35,14 @@ class MotionLevelController extends AsyncNotifier<MotionLevel> {
     // WidgetsBinding is safe to touch here — Riverpod's build runs on the
     // Flutter main isolate after binding is up (main.dart calls
     // `WidgetsFlutterBinding.ensureInitialized()`).
-    final view = WidgetsBinding.instance.platformDispatcher.views.isEmpty
-        ? null
-        : WidgetsBinding.instance.platformDispatcher.views.first;
-    final osReduced =
-        view?.platformDispatcher.accessibilityFeatures.disableAnimations ??
-            false;
-    return osReduced ? MotionLevel.reduced : MotionLevel.full;
+    //
+    // Read the accessibility flag straight off the dispatcher. It is
+    // populated whether or not a view exists yet, so gating on `views`
+    // would report "not reduced" for a device that asked for reduced
+    // motion, purely because the question was asked early.
+    final osReduced = WidgetsBinding
+        .instance.platformDispatcher.accessibilityFeatures.disableAnimations;
+    return osReduced ? MotionLevel.performance : MotionLevel.balanced;
   }
 
   Future<void> set(MotionLevel level) async {

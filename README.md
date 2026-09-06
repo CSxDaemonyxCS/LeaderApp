@@ -148,19 +148,29 @@ the attendance row eases from 0 to its target when full motion is on.
 
 ### 5. المزيد — Settings
 
-- **Settings page** (`/more`), **Profile** (`/more/profile`), **Security**
-  (`/more/security`), **Notifications** (`/more/notifications`), **Org
-  Info** (`/more/org`) — NOT built. Router references them. Data layer
-  ready.
+Built: a navigation hub plus its nested category screens and account/org
+destinations. `/more` is Settings-hub-only — it shows grouped navigation
+rows (with a short live summary on the Themes/Performance/Sync rows: active
+palette + mode, active motion level + frame rate, sync/needs-review status)
+and routes to:
 
-- **Motion Level** setting must live on `/more`. It's a two-option toggle
-  (`SegmentedButton` or a custom pill-radio):
-  - `MotionLevel.full` → "حركة كاملة" (label from `S.settingsMotionFull`)
-  - `MotionLevel.reduced` → "حركة مخففة" (label from `S.settingsMotionReduced`)
+- **Themes** (`/more/themes`) — the six-palette picker, Light/Dark/System
+  mode, and eye-protect toggle, unchanged from their original implementation
+  and still backed by `themeStateProvider` / `themeControllerProvider`.
+- **Performance** (`/more/performance`) — the five-step motion/quality
+  picker (`MotionLevel.performance` … `.maximum`, backed by
+  `motionLevelProvider`) and the frame-rate picker (backed by
+  `frameRateProvider` / `displayCapabilitiesProvider`), each exactly as
+  before.
+- **Sync** (`/more/sync`) — Manual Sync, pending-operation status, and the
+  quiet Needs Review attention row, all still the same `SyncSettingsSection`
+  widget and `syncCoordinatorProvider`/outbox wiring.
+- **Profile** (`/more/profile`), **Security** (`/more/security`),
+  **Notifications** (`/more/notifications`), **Org Info** (`/more/org`) —
+  unchanged destination screens, data layer backed by mock repositories.
 
-  Read from `motionLevelProvider`, write via
-  `ref.read(motionLevelProvider.notifier).set(level)`. Effect is instant
-  — no restart.
+Sign-out lives at the bottom of the Account group on the hub, calling the
+same `authRepositoryProvider.signOut()` as before.
 
 ## Interactions & Behavior
 

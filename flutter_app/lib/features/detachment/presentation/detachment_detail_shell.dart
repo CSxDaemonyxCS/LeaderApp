@@ -4,12 +4,18 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/motion/transitions.dart';
 import '../../../core/theme/app_palette.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/animated_tab_bar.dart';
+import '../../../core/widgets/status_chip.dart';
+import '../../../core/widgets/swipe_tabs.dart';
 import '../../../l10n/strings.dart';
+import '../../inventory/data/inventory_providers.dart';
+import '../../inventory/domain/inventory_models.dart';
 import '../../tenant/data/tenant_providers.dart';
 import '../../tenant/domain/tenant_models.dart';
 import '../data/detachment_providers.dart';
 import '../domain/detachment_models.dart';
+import '../domain/storage_status.dart';
 
 /// Shell around a single detachment: the detachment name with the tenant it
 /// belongs to underneath it, a persistent tab bar, and the active tab body.
@@ -46,13 +52,14 @@ class DetachmentDetailShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.c;
-    final detachment = ref.watch(detachmentByIdProvider(detachmentId)).whenOrNull(
-          data: (r) => r.when(
-            success: (Detachment d, {bool stale = false}) => d,
-            failure: (_, __) => null,
-            offline: (cached) => cached,
-          ),
-        );
+    final detachment =
+        ref.watch(detachmentByIdProvider(detachmentId)).whenOrNull(
+              data: (r) => r.when(
+                success: (Detachment d, {bool stale = false}) => d,
+                failure: (_, __) => null,
+                offline: (cached) => cached,
+              ),
+            );
     final tenantName = detachment == null
         ? null
         : ref.watch(tenantByIdProvider(detachment.tenantId)).whenOrNull(
@@ -89,6 +96,7 @@ class DetachmentDetailShell extends ConsumerWidget {
         ],
       ),
       body: Column(children: [
+        _StatusStrip(detachmentId: detachmentId, detachment: detachment),
         AnimatedTabBar(
           tabs: _tabs.map((t) => t.label).toList(),
           currentIndex: idx,
@@ -96,8 +104,93 @@ class DetachmentDetailShell extends ConsumerWidget {
             '/detachment/$detachmentId/${_tabs[i].path}',
           ),
         ),
-        Expanded(child: TabCrossFade(child: child)),
+        Expanded(
+          child: SwipeTabs(
+            currentIndex: idx,
+            tabCount: _tabs.length,
+            onSwitch: (i) =>
+                context.go('/detachment/$detachmentId/${_tabs[i].path}'),
+            child: TabSwitchTransition(index: idx, child: child),
+          ),
+        ),
       ]),
     );
   }
+}
+
+/// The thin line under the app bar, on every tab: where this detachment
+/// stands right now.
+///
+/// Two facts, because they answer two different questions a lead opens the
+/// screen with. The lifecycle chip (نشطة / مؤرشفة) is the one the legacy
+/// details header carried. The storage chip is new — a worst-wins rollup of
+/// the stock the detachment holds, so "something is wrong in the store" is
+/// visible without opening the storage tab.
+class _StatusStrip extends ConsumerWidget {
+  const _StatusStrip({required this.detachmentId, required this.detachment});
+
+  final String detachmentId;
+  final Detachment? detachment;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.c;
+
+    // Null while the detachment itself is still loading — the strip stays
+    // empty rather than guessing a lifecycle state.
+    if (detachment == null) return const SizedBox.shrink();
+
+    final archived = detachment!.status == DetachmentStatus.archived;
+
+    final stock = ref.watch(inventoryListProvider(detachmentId)).whenOrNull(
+          data: (r) => r.when(
+            success: (List<InventoryItem> items, {bool stale = false}) => items,
+            failure: (_, __) => null,
+            offline: (cached) => cached,
+          ),
+        );
+    final storage = stock == null ? null : storageStatusOf(stock);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: c.bg,
+        border: Border(bottom: BorderSide(color: c.line)),
+      ),
+      child: Wrap(
+        spacing: AppSpacing.sm,
+        runSpacing: AppSpacing.xs,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          StatusChip(
+            kind: archived ? StatusKind.muted : StatusKind.ok,
+            label: archived ? S.statusArchived : S.statusActive,
+          ),
+          if (storage != null)
+            StatusChip(
+              kind: _storageKind(storage),
+              label: _storageLabel(storage),
+            ),
+        ],
+      ),
+    );
+  }
+
+  StatusKind _storageKind(StorageStatus s) => switch (s) {
+        StorageStatus.healthy => StatusKind.ok,
+        StorageStatus.expiring => StatusKind.warn,
+        StorageStatus.low => StatusKind.warn,
+        StorageStatus.depleted => StatusKind.crit,
+        StorageStatus.empty => StatusKind.muted,
+      };
+
+  String _storageLabel(StorageStatus s) => switch (s) {
+        StorageStatus.healthy => S.storageStatusHealthy,
+        StorageStatus.expiring => S.storageStatusExpiring,
+        StorageStatus.low => S.storageStatusLow,
+        StorageStatus.depleted => S.storageStatusDepleted,
+        StorageStatus.empty => S.storageStatusEmpty,
+      };
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +10,8 @@ import '../../../../core/format/app_date.dart';
 import '../../../../core/motion/animated_counter.dart';
 import '../../../../core/motion/press_scale.dart';
 import '../../../../core/motion/stagger.dart';
+import '../../../../core/sync/outbox_controller.dart';
+import '../../../../core/sync/sync_scheduler.dart';
 import '../../../../core/theme/app_palette.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -17,7 +21,9 @@ import '../../../../core/widgets/refresh_indicator.dart';
 import '../../../../core/widgets/sheet_scaffold.dart';
 import '../../../../core/widgets/status_chip.dart';
 import '../../../../l10n/strings.dart';
+import '../../../auth/data/auth_providers.dart';
 import '../../../inventory/data/inventory_providers.dart';
+import '../../../inventory/domain/inventory_format.dart';
 import '../../../inventory/domain/inventory_models.dart';
 import '../../../shell/main_shell.dart';
 
@@ -36,6 +42,12 @@ class DetachmentStorageTab extends ConsumerStatefulWidget {
 }
 
 enum _StockFilter { all, low, expiring }
+
+String _packagingUnitLabel(PackagingUnit unit) => switch (unit) {
+      PackagingUnit.individual => S.packagingIndividual,
+      PackagingUnit.strip => S.packagingStrip,
+      PackagingUnit.carton => S.packagingCarton,
+    };
 
 class _StorageTabState extends ConsumerState<DetachmentStorageTab> {
   _StockFilter _filter = _StockFilter.all;
@@ -56,8 +68,7 @@ class _StorageTabState extends ConsumerState<DetachmentStorageTab> {
     }
     out = switch (_filter) {
       _StockFilter.all => out,
-      _StockFilter.low =>
-        out.where((i) => i.level != StockLevel.ok),
+      _StockFilter.low => out.where((i) => i.level != StockLevel.ok),
       _StockFilter.expiring => out.where((i) {
           final d = i.daysToExpiry;
           return d != null && d <= _expiringWithinDays;
@@ -68,8 +79,7 @@ class _StorageTabState extends ConsumerState<DetachmentStorageTab> {
 
   @override
   Widget build(BuildContext context) {
-    final canAdjust =
-        ref.capabilities.canIn(detachmentId, Cap.inventoryAdjust);
+    final canAdjust = ref.capabilities.canIn(detachmentId, Cap.inventoryAdjust);
     final onAdd = ref.whenCan(
       Cap.inventoryItemManage,
       () => context.push('/detachment/$detachmentId/storage/new'),
@@ -94,8 +104,8 @@ class _StorageTabState extends ConsumerState<DetachmentStorageTab> {
           final items = _apply(all);
           return FloatingNavPadding(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(AppSpacing.lg,
-                  AppSpacing.md, AppSpacing.lg, AppSpacing.lg),
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.lg),
               children: [
                 TextField(
                   onChanged: (v) => setState(() => _query = v),
@@ -131,8 +141,8 @@ class _StorageTabState extends ConsumerState<DetachmentStorageTab> {
                         _Chip(
                           label: S.filterExpiring,
                           active: _filter == _StockFilter.expiring,
-                          onTap: () => setState(
-                              () => _filter = _StockFilter.expiring),
+                          onTap: () =>
+                              setState(() => _filter = _StockFilter.expiring),
                         ),
                       ]),
                     ),
@@ -145,13 +155,12 @@ class _StorageTabState extends ConsumerState<DetachmentStorageTab> {
                 const SizedBox(height: AppSpacing.md),
                 if (items.isEmpty)
                   Padding(
-                    padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.xxl),
+                    padding:
+                        const EdgeInsets.symmetric(vertical: AppSpacing.xxl),
                     child: Text(
                       S.noData,
                       textAlign: TextAlign.center,
-                      style:
-                          TextStyle(color: context.c.ink3, fontSize: 13),
+                      style: TextStyle(color: context.c.ink3, fontSize: 13),
                     ),
                   )
                 else
@@ -244,7 +253,7 @@ class _ItemCard extends StatelessWidget {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Text(
-                  '${toArabicIndic(item.currentStock.toString())} ${item.unit}',
+                  stockBreakdownLabel(item),
                   style: AppTypography.digits(c.ink, size: 16),
                 ),
                 Text(
@@ -293,7 +302,21 @@ class _ItemSheetBodyState extends ConsumerState<_ItemSheetBody> {
   final _quantity = TextEditingController();
   final _reason = TextEditingController();
   MovementDirection _direction = MovementDirection.outflow;
+  late PackagingUnit _packagingUnit;
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _packagingUnit = widget.item.packaging.supports(widget.item.preferredUnit)
+        ? widget.item.preferredUnit
+        : PackagingUnit.individual;
+  }
+
+  List<PackagingUnit> get _availableUnits => [
+        for (final unit in PackagingUnit.values)
+          if (widget.item.packaging.supports(unit)) unit,
+      ];
 
   @override
   void dispose() {
@@ -328,10 +351,9 @@ class _ItemSheetBodyState extends ConsumerState<_ItemSheetBody> {
             Expanded(
               child: Text(
                 '${S.currentStock}: '
-                '${toArabicIndic('${widget.item.currentStock}')}'
-                ' ${widget.item.unit}'
+                '${stockBreakdownLabel(widget.item)}'
                 ' · ${S.minimumLevel} '
-                '${toArabicIndic('${widget.item.minimum}')}',
+                '${toArabicIndic('${widget.item.minimum}')} ${S.baseUnits}',
                 style: TextStyle(color: c.ink3, fontSize: 12),
               ),
             ),
@@ -353,8 +375,8 @@ class _ItemSheetBodyState extends ConsumerState<_ItemSheetBody> {
                   label: S.movementIn,
                   icon: Icons.south_west_rounded,
                   selected: _direction == MovementDirection.inflow,
-                  onTap: () => setState(
-                      () => _direction = MovementDirection.inflow),
+                  onTap: () =>
+                      setState(() => _direction = MovementDirection.inflow),
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
@@ -363,20 +385,55 @@ class _ItemSheetBodyState extends ConsumerState<_ItemSheetBody> {
                   label: S.movementOut,
                   icon: Icons.north_east_rounded,
                   selected: _direction == MovementDirection.outflow,
-                  onTap: () => setState(
-                      () => _direction = MovementDirection.outflow),
+                  onTap: () =>
+                      setState(() => _direction = MovementDirection.outflow),
                 ),
               ),
+            ]),
+            const SizedBox(height: AppSpacing.md),
+            Text(S.packagingUnit,
+                style: TextStyle(color: c.ink2, fontSize: 13)),
+            const SizedBox(height: AppSpacing.sm),
+            Row(children: [
+              // Only the packaging this item is configured for. Offering
+              // "carton" on a medicine with no carton size would record a
+              // quantity that means something other than what it says.
+              for (final unit in _availableUnits) ...[
+                Expanded(
+                  child: _DirectionButton(
+                    label: _packagingUnitLabel(unit),
+                    icon: switch (unit) {
+                      PackagingUnit.individual => Icons.medication_outlined,
+                      PackagingUnit.strip => Icons.view_week_outlined,
+                      PackagingUnit.carton => Icons.inventory_2_outlined,
+                    },
+                    selected: _packagingUnit == unit,
+                    onTap: () => setState(() => _packagingUnit = unit),
+                  ),
+                ),
+                if (unit != _availableUnits.last)
+                  const SizedBox(width: AppSpacing.xs),
+              ],
             ]),
             const SizedBox(height: AppSpacing.md),
             TextField(
               controller: _quantity,
               keyboardType: TextInputType.number,
+              onChanged: (_) => setState(() {}),
               decoration: const InputDecoration(
                 labelText: S.quantity,
                 hintText: S.quantityPlaceholder,
               ),
             ),
+            if (_enteredQuantity != null && _enteredQuantity! > 0) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                '${S.convertedQuantity}: '
+                '${toArabicIndic('${widget.item.packaging.baseUnitsFor(_enteredQuantity!, _packagingUnit)}')} '
+                '${S.baseUnits}',
+                style: TextStyle(color: c.ink3, fontSize: 12),
+              ),
+            ],
             const SizedBox(height: AppSpacing.sm),
             TextField(
               controller: _reason,
@@ -408,8 +465,8 @@ class _ItemSheetBodyState extends ConsumerState<_ItemSheetBody> {
             ),
             builder: (context, list, stale) => list.isEmpty
                 ? Padding(
-                    padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.lg),
+                    padding:
+                        const EdgeInsets.symmetric(vertical: AppSpacing.lg),
                     child: Text(S.noMovements,
                         style: TextStyle(color: c.ink3, fontSize: 13)),
                   )
@@ -424,18 +481,28 @@ class _ItemSheetBodyState extends ConsumerState<_ItemSheetBody> {
     );
   }
 
+  int? get _enteredQuantity =>
+      int.tryParse(toWesternDigits(_quantity.text.trim()));
+
   Future<void> _record() async {
-    final qty = int.tryParse(_quantity.text.trim());
+    final qty = _enteredQuantity;
     if (qty == null || qty <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(S.required)));
+          const SnackBar(content: Text(S.positiveIntegerRequired)));
       return;
     }
     setState(() => _saving = true);
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final user = ref.read(currentUserProvider).valueOrNull;
     final result = await ref.read(inventoryRepositoryProvider).addMovement(
           itemId: widget.item.id,
           direction: _direction,
           quantity: qty,
+          packagingUnit: _packagingUnit,
+          source: 'mobile_app',
+          performedBy: user?.id,
+          performedByName: user?.name,
           reason: _reason.text.trim().isEmpty
               ? S.movementSheet
               : _reason.text.trim(),
@@ -444,12 +511,28 @@ class _ItemSheetBodyState extends ConsumerState<_ItemSheetBody> {
     ref.invalidate(inventoryMovementsProvider);
     if (!mounted) return;
     setState(() => _saving = false);
-    result.when(
-      success: (_, {stale = false}) => Navigator.of(context).pop(),
-      failure: (message, _) => ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message))),
-      offline: (_) => ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text(S.offlineTitle))),
+    await result.when(
+      // Local-first: the write is stored, so the user is done here. Register
+      // the movement as pending synchronisation (the outbox is the single
+      // source both Auto and Manual Sync drain — it is NOT a second write
+      // path), nudge a background sync in case a transport is available, and
+      // let the user go. Nothing here waits on a server.
+      success: (_, {stale = false}) async {
+        await ref.read(outboxProvider.notifier).enqueue(
+              kind: 'inventory.movement.add',
+              entityType: 'inventory_item',
+              entityId: widget.item.id,
+            );
+        unawaited(ref.read(syncSchedulerProvider).request());
+        navigator.pop();
+        messenger.showSnackBar(
+          const SnackBar(content: Text(S.savedPendingSync)),
+        );
+      },
+      failure: (message, _) async =>
+          messenger.showSnackBar(SnackBar(content: Text(message))),
+      offline: (_) async =>
+          messenger.showSnackBar(const SnackBar(content: Text(S.offlineTitle))),
     );
   }
 }
@@ -530,11 +613,26 @@ class _MovementRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis),
               Text(AppDate.dayMonthTime(movement.at),
                   style: TextStyle(color: c.ink3, fontSize: 11)),
+              if (movement.stockBefore != null && movement.stockAfter != null)
+                Text(
+                  '${S.stockBeforeAfter}: '
+                  '${toArabicIndic('${movement.stockBefore}')} / '
+                  '${toArabicIndic('${movement.stockAfter}')}',
+                  style: TextStyle(color: c.ink3, fontSize: 11),
+                ),
+              if (movement.performedByName != null)
+                Text(
+                  '${S.recordedBy} ${movement.performedByName}',
+                  style: TextStyle(color: c.ink3, fontSize: 11),
+                ),
             ],
           ),
         ),
         Text(
-          '${inflow ? '+' : '−'}${toArabicIndic(movement.quantity.toString())}',
+          '${inflow ? '+' : '−'}${toArabicIndic(movement.quantity.toString())} '
+          '${_packagingUnitLabel(movement.packagingUnit)}\n'
+          '${toArabicIndic('${movement.convertedBaseUnitQuantity}')} ${S.baseUnits}',
+          textAlign: TextAlign.end,
           style: AppTypography.digits(inflow ? c.ok : c.warn, size: 14),
         ),
       ]),
@@ -598,9 +696,7 @@ class _AddButton extends StatelessWidget {
           const SizedBox(width: 5),
           Text(S.addItem,
               style: TextStyle(
-                  color: c.primary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600)),
+                  color: c.primary, fontSize: 12, fontWeight: FontWeight.w600)),
         ]),
       ),
     );

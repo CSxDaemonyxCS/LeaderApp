@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/access/capability.dart';
 import '../../../../core/access/capability_guard.dart';
+import '../../../../core/format/app_date.dart';
 import '../../../../core/motion/animated_counter.dart';
 import '../../../../core/result/result.dart';
 import '../../../../core/motion/motion_tokens.dart';
@@ -22,6 +23,7 @@ import '../../../shell/main_shell.dart';
 import '../../../shift/data/shift_providers.dart';
 import '../../../shift/domain/shift_models.dart';
 import '../../../team/data/team_providers.dart';
+import '../../../team/domain/team_models.dart';
 import '../../data/detachment_providers.dart';
 import '../../domain/detachment_models.dart';
 
@@ -57,24 +59,16 @@ class DetachmentStatsTab extends ConsumerWidget {
           onRetry: () => ref.invalidate(detachmentStatsProvider),
           builder: (context, stats, stale) => FloatingNavPadding(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0,
-                  AppSpacing.lg, AppSpacing.lg),
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.lg),
               children: [
                 const SectionHeader(title: S.statsOverview),
                 _LiveTiles(detachmentId: detachmentId),
-
                 const SizedBox(height: AppSpacing.md),
                 _ExportCard(
-                  onTap: () =>
-                      context.push('/detachment/$detachmentId/report'),
+                  onTap: () => context.push('/detachment/$detachmentId/report'),
                 ),
-
-                _Series(
-                  title: S.statsAttendance,
-                  values: stats.attendanceSeries,
-                  suffix: '٪',
-                  toneOk: true,
-                ),
+                _AttendanceSection(detachmentId: detachmentId),
                 _Series(
                   title: S.statsCoverage,
                   values: stats.coverageSeries,
@@ -95,6 +89,263 @@ class DetachmentStatsTab extends ConsumerWidget {
     );
   }
 }
+
+enum _StatsRange {
+  week(7, S.rangeWeek),
+  month(30, S.rangeMonth),
+  quarter(90, S.rangeQuarter);
+
+  const _StatsRange(this.days, this.label);
+  final int days;
+  final String label;
+}
+
+class _AttendanceSection extends ConsumerStatefulWidget {
+  const _AttendanceSection({required this.detachmentId});
+
+  final String detachmentId;
+
+  @override
+  ConsumerState<_AttendanceSection> createState() => _AttendanceSectionState();
+}
+
+class _AttendanceSectionState extends ConsumerState<_AttendanceSection> {
+  _StatsRange _range = _StatsRange.month;
+  String? _memberId;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.c;
+    final today = dateOnly(DateTime.now());
+    final query = AttendanceStatsQuery(
+      detachmentId: widget.detachmentId,
+      from: today.subtract(Duration(days: _range.days - 1)),
+      to: today,
+      memberId: _memberId,
+    );
+    final roster = _dataOf(
+      ref.watch(teamListProvider(widget.detachmentId)).valueOrNull,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionHeader(title: S.attendanceDetails),
+        Row(children: [
+          for (final range in _StatsRange.values) ...[
+            Expanded(
+              child: _ChoiceFilter(
+                label: range.label,
+                selected: _range == range,
+                onTap: () => setState(() => _range = range),
+              ),
+            ),
+            if (range != _StatsRange.values.last)
+              const SizedBox(width: AppSpacing.xs),
+          ],
+        ]),
+        const SizedBox(height: AppSpacing.sm),
+        DropdownButtonFormField<String?>(
+          key: const Key('attendance-member-filter'),
+          initialValue: _memberId,
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: S.memberFilter),
+          items: [
+            const DropdownMenuItem<String?>(
+              value: null,
+              child: Text(S.allMembers),
+            ),
+            for (final member in roster ?? const <TeamMember>[])
+              DropdownMenuItem<String?>(
+                value: member.id,
+                child: Text(member.name, overflow: TextOverflow.ellipsis),
+              ),
+          ],
+          onChanged: (value) => setState(() => _memberId = value),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        AsyncResultView<AttendanceStatistics>(
+          value: ref.watch(attendanceStatisticsProvider(query)),
+          onRetry: () => ref.invalidate(attendanceStatisticsProvider(query)),
+          loading: const Padding(
+            padding: EdgeInsets.all(AppSpacing.lg),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+          builder: (context, statistics, stale) {
+            if (statistics.members.isEmpty) {
+              return Text(S.noStats,
+                  style: TextStyle(color: c.ink3, fontSize: 13));
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
+                  children: [
+                    _AttendanceMetric(S.presentTotal, statistics.presentCount),
+                    _AttendanceMetric(S.absentTotal, statistics.absentCount),
+                    _AttendanceMetric(
+                      S.completedTotal,
+                      statistics.completedCount,
+                    ),
+                    _AttendanceMetric(
+                      S.attendancePercent,
+                      statistics.attendancePercent,
+                      suffix: '٪',
+                    ),
+                  ],
+                ),
+                for (final role in TeamRole.values) ...[
+                  if (statistics.members.any((member) => member.role == role))
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.md),
+                      child: Text(
+                        _statsRoleLabel(role),
+                        style: TextStyle(
+                          color: c.ink2,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  for (final member in statistics.members
+                      .where((member) => member.role == role))
+                    _MemberAttendanceCard(member: member),
+                ],
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  static T? _dataOf<T>(Result<T>? result) => result?.when(
+        success: (data, {stale = false}) => data,
+        failure: (_, __) => null,
+        offline: (cached) => cached,
+      );
+}
+
+class _ChoiceFilter extends StatelessWidget {
+  const _ChoiceFilter({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.c;
+    return PressScale(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? c.primaryTint : c.surface,
+          border: Border.all(color: selected ? c.primary : c.line),
+          borderRadius: BorderRadius.circular(AppRadii.md),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(color: selected ? c.primary : c.ink2, fontSize: 12),
+        ),
+      ),
+    );
+  }
+}
+
+class _AttendanceMetric extends StatelessWidget {
+  const _AttendanceMetric(this.label, this.value, {this.suffix = ''});
+
+  final String label;
+  final int value;
+  final String suffix;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.c;
+    return Container(
+      width: 148,
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.line),
+        borderRadius: BorderRadius.circular(AppRadii.md),
+      ),
+      child: Text(
+        '$label · ${toArabicIndic('$value')}$suffix',
+        style: TextStyle(color: c.ink2, fontSize: 12),
+      ),
+    );
+  }
+}
+
+class _MemberAttendanceCard extends StatelessWidget {
+  const _MemberAttendanceCard({required this.member});
+
+  final MemberAttendanceSummary member;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.c;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: AppSpacing.sm),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.line),
+        borderRadius: BorderRadius.circular(AppRadii.lg),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(member.memberName,
+              style: TextStyle(
+                  color: c.ink, fontSize: 14, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Text(
+            '${S.presentTotal} ${toArabicIndic('${member.presentCount}')} · '
+            '${S.absentTotal} ${toArabicIndic('${member.absentCount}')} · '
+            '${S.completedTotal} ${toArabicIndic('${member.completedCount}')}',
+            style: TextStyle(color: c.ink3, fontSize: 11),
+          ),
+          for (final record in member.records)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                '${AppDate.dayMonth(record.shiftDate)} · '
+                '${_statsAttendanceLabel(record.status)}'
+                '${record.checkInAt == null ? '' : ' · ${AppDate.time(record.checkInAt!)}'}'
+                '${record.checkOutAt == null ? '' : ' – ${AppDate.time(record.checkOutAt!)}'}',
+                style: TextStyle(color: c.ink2, fontSize: 11),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+String _statsRoleLabel(TeamRole role) => switch (role) {
+      TeamRole.shiftSupervisor => S.roleShiftSupervisor,
+      TeamRole.administrator => S.roleAdministrator,
+      TeamRole.followUp => S.roleFollowUp,
+      TeamRole.member => S.roleMember,
+    };
+
+String _statsAttendanceLabel(AttendanceState state) => switch (state) {
+      AttendanceState.notCheckedIn => S.notCheckedIn,
+      AttendanceState.checkedIn => S.checkedIn,
+      AttendanceState.checkedOut => S.checkedOut,
+      AttendanceState.absent => S.absent,
+    };
 
 /// Four counts read straight from the other tabs' providers.
 ///
@@ -155,8 +406,7 @@ class _LiveTiles extends ConsumerWidget {
           value: items == null
               ? null
               : '${items.where((i) => i.level != StockLevel.ok).length}',
-          warn: items != null &&
-              items.any((i) => i.level != StockLevel.ok),
+          warn: items != null && items.any((i) => i.level != StockLevel.ok),
         ),
       ),
     ]);
@@ -214,8 +464,8 @@ class _Tile extends StatelessWidget {
               : Center(
                   child: TabularDigits(
                     '${toArabicIndic(value!)}$suffix',
-                    style: AppTypography.digits(
-                        warn ? c.warn : c.ink, size: 19),
+                    style:
+                        AppTypography.digits(warn ? c.warn : c.ink, size: 19),
                   ),
                 ),
         ),
@@ -261,8 +511,7 @@ class _ExportCard extends StatelessWidget {
                         fontWeight: FontWeight.w600)),
                 const SizedBox(height: 2),
                 Text(S.exportSub,
-                    style: TextStyle(
-                        color: c.ink2, fontSize: 12, height: 1.4)),
+                    style: TextStyle(color: c.ink2, fontSize: 12, height: 1.4)),
               ],
             ),
           ),
@@ -355,7 +604,7 @@ class _Bar extends StatelessWidget {
     final c = context.c;
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: fraction.clamp(0, 1)),
-      duration: effectiveDuration(context, MotionTokens.progressFill),
+      duration: effectiveValueDuration(context, MotionTokens.progressFill),
       curve: effectiveCurve(context, MotionTokens.enter),
       builder: (context, v, _) => Align(
         alignment: Alignment.bottomCenter,

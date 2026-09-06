@@ -12,6 +12,16 @@ import 'package:mtm/core/router/app_router.dart';
 /// the app then dies on a red screen before its first frame instead of failing
 /// on the edit screen, which is why this is a router test and not a UI one.
 const _locations = <String>[
+  // The forced-upgrade gate. Reachable as a route; whether it is *shown* is
+  // the router's redirect, covered in
+  // `test/features/app_version/forced_upgrade_test.dart`.
+  '/upgrade-required',
+  '/conflicts/c1',
+  // The Needs Review inbox — a root route beside the conflict screen it
+  // opens, so it covers the bottom nav too.
+  '/needs-review',
+  // The Notifications Center, a root route for the same reason.
+  '/notifications',
   '/login',
   '/mfa-setup',
   '/mfa-challenge',
@@ -32,6 +42,7 @@ const _locations = <String>[
   '/detachment/d1/edit',
   '/detachment/d1/member/new',
   '/detachment/d1/member/m1/edit',
+  '/detachment/d1/member/m1/status',
   '/detachment/d1/team',
   '/detachment/d1/shifts',
   '/detachment/d1/storage',
@@ -47,6 +58,9 @@ const _locations = <String>[
   '/workshop/w1/members',
   '/workshop/w1/stats',
   '/more',
+  '/more/themes',
+  '/more/performance',
+  '/more/sync',
   '/more/profile',
   '/more/security',
   '/more/notifications',

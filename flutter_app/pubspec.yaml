@@ -15,6 +15,8 @@ dependencies:
   flutter_riverpod: ^2.5.1
   go_router: ^14.2.7
   intl: ^0.20.2
+  pdf: ^3.12.0
+  printing: ^5.14.3
   # QR display for MFA setup (no camera, no scanning).
   qr_flutter: ^4.1.0
 
@@ -25,6 +27,13 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # The MTM mark — the artwork the legacy `medical_team` app ships as
+  # `mtm_logo_full.png`, bundled so in-app surfaces (the forced-upgrade
+  # screen) can draw it. NOT the launcher icon: `android/.../mipmap-*` still
+  # holds the stock Flutter mark.
+  assets:
+    - assets/brand/
 
   # Bundled font — do NOT swap for google_fonts. This app is offline-first,
   # google_fonts fetches at runtime and the first launch without network

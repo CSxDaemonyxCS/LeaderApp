@@ -1,6 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../problem/problem.dart';
+import '../problem/problem_presentation.dart';
 import '../result/result.dart';
 import '../../l10n/strings.dart';
 import 'empty_state.dart';
@@ -39,8 +42,11 @@ class AsyncResultView<T> extends StatelessWidget {
       error: (_, __) => ErrorStateView(onRetry: onRetry),
       data: (result) => result.when(
         success: (data, {stale = false}) => builder(context, data, stale),
-        failure: (message, _) =>
-            ErrorStateView(body: message, onRetry: onRetry),
+        // A section failure is resolved through the shared problem pipeline:
+        // known codes get MTM's own localized copy, an unrecognised code
+        // gets the safe generic fallback — never a raw wire string dressed
+        // up as product copy. See FRONTEND-BACKEND-INTEGRATION.md §2.
+        failure: (message, code) => _failure(message, code),
         offline: (cached) => cached == null
             ? EmptyState(
                 icon: Icons.cloud_off_rounded,
@@ -51,6 +57,27 @@ class AsyncResultView<T> extends StatelessWidget {
               )
             : builder(context, cached, true),
       ),
+    );
+  }
+
+  Widget _failure(String message, String? code) {
+    final problem = Problem.of(
+      ProblemCode.parse(code),
+      rawCode: code,
+      detail: message,
+    );
+    if (!problem.isKnown && kDebugMode) {
+      // Keep the dropped information for a developer without ever showing
+      // it: the user sees the generic fallback, the console keeps the code
+      // and the server text.
+      debugPrint('AsyncResultView: unhandled problem '
+          '${problem.rawCode ?? '(no code)'} — "${problem.detail ?? ''}"');
+    }
+    final view = resolveProblem(problem);
+    return ErrorStateView(
+      title: view.title,
+      body: view.message,
+      onRetry: onRetry,
     );
   }
 }

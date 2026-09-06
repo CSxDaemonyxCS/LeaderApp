@@ -70,7 +70,8 @@ class _S extends ConsumerState<OtpPage> {
               children: [
                 for (int i = 0; i < _len; i++)
                   SizedBox(
-                    width: 46, height: 56,
+                    width: 46,
+                    height: 56,
                     child: TextField(
                       controller: _controllers[i],
                       focusNode: _nodes[i],
@@ -86,7 +87,9 @@ class _S extends ConsumerState<OtpPage> {
                         counterText: '',
                       ),
                       onChanged: (v) {
-                        if (v.isNotEmpty && i < _len - 1) _nodes[i + 1].requestFocus();
+                        if (v.isNotEmpty && i < _len - 1) {
+                          _nodes[i + 1].requestFocus();
+                        }
                         if (v.isEmpty && i > 0) _nodes[i - 1].requestFocus();
                         if (_code.length == _len) _submit();
                       },
@@ -104,7 +107,8 @@ class _S extends ConsumerState<OtpPage> {
             onPressed: _busy ? null : _submit,
             child: _busy
                 ? SizedBox(
-                    width: 22, height: 22,
+                    width: 22,
+                    height: 22,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: c.primaryInk),
                   )

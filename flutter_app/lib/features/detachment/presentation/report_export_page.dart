@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:printing/printing.dart';
 
 import '../../../core/access/capability.dart';
 import '../../../core/access/capability_guard.dart';
 import '../../../core/format/app_date.dart';
+import '../../../core/export/attendance_pdf.dart';
 import '../../../core/motion/animated_counter.dart';
 import '../../../core/motion/motion_tokens.dart';
 import '../../../core/motion/press_scale.dart';
@@ -65,7 +67,6 @@ class _ReportExportPageState extends ConsumerState<ReportExportPage> {
         children: [
           Text(S.exportSub,
               style: TextStyle(color: c.ink3, fontSize: 13, height: 1.6)),
-
           const SectionHeader(title: S.exportRange),
           Row(children: [
             for (final r in ReportRange.values) ...[
@@ -80,7 +81,6 @@ class _ReportExportPageState extends ConsumerState<ReportExportPage> {
                 const SizedBox(width: AppSpacing.sm),
             ],
           ]),
-
           const SectionHeader(title: S.exportFormat),
           Row(children: [
             for (final f in ReportFormat.values) ...[
@@ -98,7 +98,6 @@ class _ReportExportPageState extends ConsumerState<ReportExportPage> {
                 const SizedBox(width: AppSpacing.sm),
             ],
           ]),
-
           SectionHeader(
             title: '${S.exportSections} · '
                 '${toArabicIndic('$chosen')} ${S.sectionsChosen}',
@@ -111,7 +110,6 @@ class _ReportExportPageState extends ConsumerState<ReportExportPage> {
             ),
             const SizedBox(height: AppSpacing.sm),
           ],
-
           const SizedBox(height: AppSpacing.lg),
           _Actions(
             detachmentId: widget.detachmentId,
@@ -165,10 +163,16 @@ class _Actions extends ConsumerWidget {
       ),
       const SizedBox(height: AppSpacing.sm),
       OutlinedButton.icon(
-        onPressed:
-            canExport && !busy ? () => _copy(context, ref) : null,
-        icon: const Icon(Icons.copy_all_rounded, size: 19),
-        label: const Text(S.exportCopy),
+        onPressed: canExport && !busy ? () => _export(context, ref) : null,
+        icon: Icon(
+          spec.format == ReportFormat.pdf
+              ? Icons.ios_share_rounded
+              : Icons.copy_all_rounded,
+          size: 19,
+        ),
+        label: Text(
+          spec.format == ReportFormat.pdf ? S.exportPdf : S.exportCopy,
+        ),
       ),
     ]);
   }
@@ -180,7 +184,7 @@ class _Actions extends ConsumerWidget {
   /// here — CSV for the spreadsheet path, laid-out text for the other — so
   /// wiring a real `.csv`/`.pdf` write is a delivery change, not a rebuild:
   /// swap this one method for a file write plus a share sheet.
-  Future<void> _copy(BuildContext context, WidgetRef ref) async {
+  Future<void> _export(BuildContext context, WidgetRef ref) async {
     onBusy(true);
     final result = await ref.read(
       reportProvider(ReportQuery(detachmentId: detachmentId, spec: spec))
@@ -191,13 +195,25 @@ class _Actions extends ConsumerWidget {
 
     result.when(
       success: (doc, {stale = false}) async {
-        final text = spec.format == ReportFormat.excel
-            ? doc.toCsv()
-            : doc.toPlainText();
-        await Clipboard.setData(ClipboardData(text: text));
+        try {
+          if (spec.format == ReportFormat.pdf) {
+            final bytes = await AttendancePdfBuilder.build(doc);
+            await Printing.sharePdf(bytes: bytes, filename: 'mtm-report.pdf');
+          } else {
+            await Clipboard.setData(ClipboardData(text: doc.toCsv()));
+          }
+        } catch (_) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text(S.pdfError)));
+          return;
+        }
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text(S.exportCopied)));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            spec.format == ReportFormat.pdf ? S.pdfReady : S.exportCopied,
+          ),
+        ));
       },
       failure: (message, _) => ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(message))),
@@ -306,8 +322,7 @@ class _SectionSwitch extends StatelessWidget {
                     )),
                 const SizedBox(height: 2),
                 Text(section.subtitle,
-                    style: TextStyle(
-                        color: c.ink3, fontSize: 12, height: 1.4)),
+                    style: TextStyle(color: c.ink3, fontSize: 12, height: 1.4)),
               ],
             ),
           ),
@@ -358,8 +373,7 @@ class _Facts extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 5),
           child: Row(children: [
             Expanded(
-              child: Text(label,
-                  style: TextStyle(color: c.ink3, fontSize: 13)),
+              child: Text(label, style: TextStyle(color: c.ink3, fontSize: 13)),
             ),
             Text(value,
                 style: TextStyle(
@@ -393,8 +407,8 @@ class _Table extends StatelessWidget {
         horizontalMargin: 0,
         columnSpacing: AppSpacing.lg,
         dividerThickness: 0.6,
-        headingTextStyle: TextStyle(
-            color: c.ink3, fontSize: 12, fontWeight: FontWeight.w600),
+        headingTextStyle:
+            TextStyle(color: c.ink3, fontSize: 12, fontWeight: FontWeight.w600),
         dataTextStyle: TextStyle(color: c.ink, fontSize: 12.5),
         columns: [for (final col in columns) DataColumn(label: Text(col))],
         rows: [
@@ -496,8 +510,7 @@ class ReportHeader extends StatelessWidget {
         Text('${S.reportFor} · ${doc.detachmentName}',
             style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 2),
-        Text(doc.tenantName,
-            style: TextStyle(color: c.ink3, fontSize: 13)),
+        Text(doc.tenantName, style: TextStyle(color: c.ink3, fontSize: 13)),
         const SizedBox(height: 6),
         Text(
           '${S.reportGeneratedAt} ${AppDate.dayMonthTime(doc.generatedAt)}'

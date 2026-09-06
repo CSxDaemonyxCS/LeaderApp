@@ -1,4 +1,5 @@
 import '../../team/domain/team_models.dart';
+import 'attendance_correction.dart';
 
 /// Where a week begins in this app: **Saturday**.
 ///
@@ -43,45 +44,62 @@ extension ShiftPeriodTimes on ShiftPeriod {
   }
 }
 
-/// A weekly repeat. One row per weekday the detachment always runs a shift.
+/// A repeating shift, as the exact set of days it runs on.
 ///
-/// The legacy program stored the schedule as a weekly template plus dated
-/// occurrences, and that shape is kept here because it is the one that makes
-/// "every Tuesday evening" a single record instead of fifty-two.
+/// The legacy program stored a *weekly* template plus dated occurrences, which
+/// suited a standing schedule that outlives any one week. A detachment here
+/// runs for ten to fifteen days and then ends, so there is no standing weekly
+/// rule to keep — what the user actually wants is to point at the specific
+/// days a shift should exist. [dates] is therefore an explicit list of
+/// day-dates (local midnight, sorted, no duplicates), not a weekday.
+///
+/// The template *owns* the shifts on those dates: creating or editing the
+/// repeat set materialises the missing days and removes the surplus ones (a
+/// day that has people assigned is never removed — see
+/// `MockShiftRepository.updateRepeat`). Editing a single materialised shift
+/// does not edit the template; one day's change is not the whole set's rule.
 ///
 /// Stopping a template never touches the occurrences it already produced —
 /// last month's attendance has to keep reading the same way after this
 /// month's schedule changes.
 class ShiftTemplate {
-  const ShiftTemplate({
+  ShiftTemplate({
     required this.id,
     required this.detachmentId,
     required this.centerName,
-    required this.weekday,
+    required Iterable<DateTime> dates,
     required this.startMinutes,
     required this.endMinutes,
     required this.needed,
     this.active = true,
-  });
+  }) : dates = _normalizeDates(dates);
 
   final String id;
   final String detachmentId;
   final String centerName;
 
-  /// `DateTime.monday` (1) … `DateTime.sunday` (7).
-  final int weekday;
+  /// Every day this shift runs, as local midnight, ascending, deduplicated.
+  final List<DateTime> dates;
 
   final int startMinutes;
   final int endMinutes;
   final int needed;
   final bool active;
 
-  ShiftPeriod get period =>
-      ShiftPeriodTimes.match(startMinutes, endMinutes);
+  ShiftPeriod get period => ShiftPeriodTimes.match(startMinutes, endMinutes);
+
+  int get dayCount => dates.length;
+  DateTime? get firstDate => dates.isEmpty ? null : dates.first;
+  DateTime? get lastDate => dates.isEmpty ? null : dates.last;
+
+  static List<DateTime> _normalizeDates(Iterable<DateTime> input) {
+    final seen = <DateTime>{for (final d in input) dateOnly(d)};
+    return seen.toList()..sort();
+  }
 
   ShiftTemplate copyWith({
     String? centerName,
-    int? weekday,
+    Iterable<DateTime>? dates,
     int? startMinutes,
     int? endMinutes,
     int? needed,
@@ -91,7 +109,7 @@ class ShiftTemplate {
         id: id,
         detachmentId: detachmentId,
         centerName: centerName ?? this.centerName,
-        weekday: weekday ?? this.weekday,
+        dates: dates ?? this.dates,
         startMinutes: startMinutes ?? this.startMinutes,
         endMinutes: endMinutes ?? this.endMinutes,
         needed: needed ?? this.needed,
@@ -102,7 +120,9 @@ class ShiftTemplate {
         id: j['id'] as String,
         detachmentId: j['detachmentId'] as String,
         centerName: j['centerName'] as String,
-        weekday: j['weekday'] as int,
+        dates: (j['dates'] as List)
+            .map((e) => DateTime.parse(e as String))
+            .toList(),
         startMinutes: j['startMinutes'] as int,
         endMinutes: j['endMinutes'] as int,
         needed: j['needed'] as int,
@@ -113,7 +133,7 @@ class ShiftTemplate {
         'id': id,
         'detachmentId': detachmentId,
         'centerName': centerName,
-        'weekday': weekday,
+        'dates': [for (final d in dates) d.toIso8601String()],
         'startMinutes': startMinutes,
         'endMinutes': endMinutes,
         'needed': needed,
@@ -137,6 +157,7 @@ class Shift {
     required this.needed,
     required this.attendees,
     this.templateId,
+    this.corrections = const [],
   });
 
   final String id;
@@ -155,6 +176,36 @@ class Shift {
   /// Set when the shift was produced by a weekly repeat. Editing the shift
   /// does not edit the template — one week's change is not next week's rule.
   final String? templateId;
+
+  /// Append-only attendance corrections for this shift's attendees, oldest
+  /// first. Lives here rather than on [TeamMember] because a `TeamMember`
+  /// also doubles as a workshop's organising-team projection, which has no
+  /// business carrying shift audit data — the correction belongs to the
+  /// assignment, not the roster record. See
+  /// `MockShiftRepository.addAttendanceCorrection`, the only writer.
+  final List<AttendanceCorrection> corrections;
+
+  /// [corrections] narrowed to one member, oldest first — what the
+  /// attendance sheet's "سجل التصحيحات" section shows.
+  List<AttendanceCorrection> correctionsFor(String memberId) => [
+        for (final c in corrections)
+          if (c.memberId == memberId) c,
+      ];
+
+  /// The person answerable for this shift — the assigned member whose role is
+  /// [TeamRole.shiftSupervisor], or `null` when nobody on the shift holds it.
+  ///
+  /// Derived rather than stored: a supervisor is a person on the shift, and a
+  /// stored field would be one more thing to keep in step with the attendee
+  /// list. Where two supervisors are assigned the first one wins, which is
+  /// the same order the roster shows them in — the card names *a* supervisor
+  /// to ask, and the full list is one tap away in the management sheet.
+  TeamMember? get manager {
+    for (final a in attendees) {
+      if (a.role == TeamRole.shiftSupervisor) return a;
+    }
+    return null;
+  }
 
   int get assigned => attendees.length;
   int get gap => (needed - assigned).clamp(0, needed);
@@ -197,17 +248,20 @@ class Shift {
     int? endMinutes,
     int? needed,
     List<TeamMember>? attendees,
+    String? templateId,
+    List<AttendanceCorrection>? corrections,
   }) =>
       Shift(
         id: id,
         detachmentId: detachmentId,
-        templateId: templateId,
+        templateId: templateId ?? this.templateId,
         date: date ?? this.date,
         centerName: centerName ?? this.centerName,
         startMinutes: startMinutes ?? this.startMinutes,
         endMinutes: endMinutes ?? this.endMinutes,
         needed: needed ?? this.needed,
         attendees: attendees ?? this.attendees,
+        corrections: corrections ?? this.corrections,
       );
 
   factory Shift.fromJson(Map<String, dynamic> j) => Shift(
@@ -222,6 +276,10 @@ class Shift {
         attendees: (j['attendees'] as List)
             .map((e) => TeamMember.fromJson(e as Map<String, dynamic>))
             .toList(),
+        corrections: ((j['corrections'] as List?) ?? const [])
+            .map(
+                (e) => AttendanceCorrection.fromJson(e as Map<String, dynamic>))
+            .toList(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -234,6 +292,8 @@ class Shift {
         'endMinutes': endMinutes,
         'needed': needed,
         'attendees': attendees.map((a) => a.toJson()).toList(),
+        if (corrections.isNotEmpty)
+          'corrections': corrections.map((c) => c.toJson()).toList(),
       };
 }
 
@@ -282,4 +342,135 @@ class WeekSummary {
         neededTotal: shifts.fold(0, (s, x) => s + x.needed),
         gapShiftCount: shifts.where((x) => x.hasCoverageGap).length,
       );
+}
+
+/// One member's assignment and attendance facts for one dated shift.
+class AttendanceRecord {
+  const AttendanceRecord({
+    required this.shiftId,
+    required this.shiftDate,
+    required this.centerName,
+    required this.member,
+  });
+
+  final String shiftId;
+  final DateTime shiftDate;
+  final String centerName;
+  final TeamMember member;
+
+  AttendanceState get status => member.attendance;
+  DateTime? get checkInAt => member.checkInAt;
+  DateTime? get checkOutAt => member.checkOutAt;
+  bool get isPresent =>
+      status == AttendanceState.checkedIn ||
+      status == AttendanceState.checkedOut;
+  bool get isCompleted => status == AttendanceState.checkedOut;
+  bool get isAbsent => status == AttendanceState.absent;
+  bool get isPending => status == AttendanceState.notCheckedIn;
+}
+
+class MemberAttendanceSummary {
+  const MemberAttendanceSummary({
+    required this.memberId,
+    required this.memberName,
+    required this.role,
+    required this.records,
+  });
+
+  final String memberId;
+  final String memberName;
+  final TeamRole role;
+  final List<AttendanceRecord> records;
+
+  int get presentCount => records.where((record) => record.isPresent).length;
+  int get absentCount => records.where((record) => record.isAbsent).length;
+  int get completedCount =>
+      records.where((record) => record.isCompleted).length;
+
+  /// Assignments nobody has reviewed yet. The legacy program had no such
+  /// state — its rows were seeded `absent` — so this count is always zero
+  /// over legacy-shaped data and is reported separately rather than being
+  /// folded into [absentCount].
+  int get pendingCount => records.where((record) => record.isPending).length;
+
+  /// Oldest first. The legacy attendance report printed a member's days
+  /// ascending (`ORDER BY rec.date ASC`) while the on-screen drill-down
+  /// listed them newest first; [records] keeps the screen order.
+  List<AttendanceRecord> get recordsOldestFirst =>
+      [...records]..sort((a, b) => a.shiftDate.compareTo(b.shiftDate));
+}
+
+/// Attendance totals follow the legacy application's reviewed-row rule.
+///
+/// Legacy (`detachment_stats_providers.dart`) counted every
+/// `shift_occurrence_attendance` row on a non-cancelled occurrence, where the
+/// status column was `present` or `absent` only, and read
+/// `round(present / (present + absent) * 100).clamp(0, 100)`, or `0` when
+/// there were no rows. That is reproduced exactly here: checked-in and
+/// checked-out assignments are present, absences are absent, and the two are
+/// the whole denominator.
+///
+/// The one place the two models can differ is [pendingCount]. The legacy
+/// schema defaulted a seeded row to `absent`, so "nobody reviewed this" and
+/// "this person did not come" were the same value. This app separates them
+/// into `notCheckedIn` and `absent`, so an unreviewed assignment is neither
+/// present nor absent and is surfaced on its own instead of silently
+/// depressing the percentage.
+class AttendanceStatistics {
+  const AttendanceStatistics({required this.members});
+
+  final List<MemberAttendanceSummary> members;
+
+  int get presentCount =>
+      members.fold(0, (total, member) => total + member.presentCount);
+  int get absentCount =>
+      members.fold(0, (total, member) => total + member.absentCount);
+  int get completedCount =>
+      members.fold(0, (total, member) => total + member.completedCount);
+  int get pendingCount =>
+      members.fold(0, (total, member) => total + member.pendingCount);
+  int get reviewedCount => presentCount + absentCount;
+  int get attendancePercent => reviewedCount == 0
+      ? 0
+      : ((presentCount / reviewedCount) * 100).round().clamp(0, 100);
+
+  List<AttendanceRecord> get records => [
+        for (final member in members) ...member.records,
+      ];
+
+  factory AttendanceStatistics.fromShifts(
+    Iterable<Shift> shifts, {
+    String? memberId,
+  }) {
+    final grouped = <String, List<AttendanceRecord>>{};
+    for (final shift in shifts) {
+      for (final member in shift.attendees) {
+        if (memberId != null && member.id != memberId) continue;
+        grouped.putIfAbsent(member.id, () => []).add(
+              AttendanceRecord(
+                shiftId: shift.id,
+                shiftDate: shift.date,
+                centerName: shift.centerName,
+                member: member,
+              ),
+            );
+      }
+    }
+    final summaries = <MemberAttendanceSummary>[
+      for (final entry in grouped.entries)
+        MemberAttendanceSummary(
+          memberId: entry.key,
+          memberName: entry.value.first.member.name,
+          role: entry.value.first.member.role,
+          records: entry.value
+            ..sort(
+              (a, b) => b.shiftDate.compareTo(a.shiftDate),
+            ),
+        ),
+    ]..sort((a, b) {
+        final byRole = a.role.index.compareTo(b.role.index);
+        return byRole != 0 ? byRole : a.memberName.compareTo(b.memberName);
+      });
+    return AttendanceStatistics(members: summaries);
+  }
 }

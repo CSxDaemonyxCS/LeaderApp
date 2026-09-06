@@ -60,7 +60,8 @@ class _S extends ConsumerState<ForgotPasswordPage> {
             onPressed: _busy ? null : _submit,
             child: _busy
                 ? SizedBox(
-                    width: 22, height: 22,
+                    width: 22,
+                    height: 22,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: c.primaryInk),
                   )

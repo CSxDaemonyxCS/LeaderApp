@@ -4,6 +4,10 @@ import 'team_models.dart';
 abstract class TeamRepository {
   Future<Result<List<TeamMember>>> listForDetachment(String detachmentId);
 
+  /// Finds a normalized, case-insensitive name match inside one detachment.
+  Future<Result<TeamMember?>> findNameMatch(
+      String detachmentId, String candidateName);
+
   /// One member, for the edit form to seed itself from.
   Future<Result<TeamMember>> byId(String memberId);
 
@@ -16,6 +20,13 @@ abstract class TeamRepository {
     required String department,
     required String personalNumber,
     required TeamRole role,
+  });
+
+  /// Creates a real roster member from the shift-assignment flow. The
+  /// repository supplies the internal personal number and default role.
+  Future<Result<TeamMember>> createFromShift({
+    required String detachmentId,
+    required String name,
   });
 
   /// Saves the editable fields of [member]: name, department, number, role.

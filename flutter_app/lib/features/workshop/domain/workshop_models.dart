@@ -2,6 +2,14 @@ import '../../team/domain/team_models.dart';
 
 enum WorkshopStatus { scheduled, ongoing, done }
 
+/// Whether a person has paid the workshop's registration fee.
+///
+/// Deliberately used as a *nullable* type everywhere: `null` is a third,
+/// meaningful state — "not recorded yet" — and it is the state most people
+/// are in before the door opens. Collapsing it into `unpaid` would turn a
+/// missing record into an accusation.
+enum PaymentStatus { paid, unpaid }
+
 class Workshop {
   const Workshop({
     required this.id,
@@ -13,6 +21,7 @@ class Workshop {
     required this.guests,
     required this.status,
     required this.organizingTeam,
+    this.registrationFee = 0,
   });
 
   final String id;
@@ -25,6 +34,10 @@ class Workshop {
   final WorkshopStatus status;
   final List<TeamMember> organizingTeam;
 
+  /// What one seat costs. `0` means the workshop is free, and the statistics
+  /// screen says so instead of printing a zero total.
+  final double registrationFee;
+
   bool get isFull => registered >= capacity;
 
   Workshop copyWith({
@@ -35,6 +48,7 @@ class Workshop {
     int? registered,
     int? guests,
     WorkshopStatus? status,
+    double? registrationFee,
   }) =>
       Workshop(
         id: id,
@@ -46,6 +60,7 @@ class Workshop {
         guests: guests ?? this.guests,
         status: status ?? this.status,
         organizingTeam: organizingTeam,
+        registrationFee: registrationFee ?? this.registrationFee,
       );
 
   factory Workshop.fromJson(Map<String, dynamic> j) => Workshop(
@@ -56,11 +71,11 @@ class Workshop {
         capacity: j['capacity'] as int,
         registered: j['registered'] as int,
         guests: j['guests'] as int,
-        status:
-            WorkshopStatus.values.firstWhere((s) => s.name == j['status']),
+        status: WorkshopStatus.values.firstWhere((s) => s.name == j['status']),
         organizingTeam: (j['organizingTeam'] as List)
             .map((e) => TeamMember.fromJson(e as Map<String, dynamic>))
             .toList(),
+        registrationFee: (j['registrationFee'] as num?)?.toDouble() ?? 0,
       );
 
   Map<String, dynamic> toJson() => {
@@ -72,8 +87,8 @@ class Workshop {
         'registered': registered,
         'guests': guests,
         'status': status.name,
-        'organizingTeam':
-            organizingTeam.map((t) => t.toJson()).toList(),
+        'organizingTeam': organizingTeam.map((t) => t.toJson()).toList(),
+        'registrationFee': registrationFee,
       };
 }
 
@@ -87,6 +102,7 @@ class WorkshopParticipant {
     required this.initials,
     required this.kind,
     required this.attendance,
+    this.paymentStatus,
   });
 
   final String id;
@@ -96,7 +112,13 @@ class WorkshopParticipant {
   final ParticipantKind kind;
   final AttendanceState attendance;
 
-  WorkshopParticipant copyWith({AttendanceState? attendance}) =>
+  /// `null` until somebody records it — see [PaymentStatus].
+  final PaymentStatus? paymentStatus;
+
+  WorkshopParticipant copyWith({
+    AttendanceState? attendance,
+    PaymentStatus? paymentStatus,
+  }) =>
       WorkshopParticipant(
         id: id,
         workshopId: workshopId,
@@ -104,6 +126,7 @@ class WorkshopParticipant {
         initials: initials,
         kind: kind,
         attendance: attendance ?? this.attendance,
+        paymentStatus: paymentStatus ?? this.paymentStatus,
       );
 
   factory WorkshopParticipant.fromJson(Map<String, dynamic> j) =>
@@ -112,10 +135,15 @@ class WorkshopParticipant {
         workshopId: j['workshopId'] as String,
         name: j['name'] as String,
         initials: j['initials'] as String,
-        kind:
-            ParticipantKind.values.firstWhere((k) => k.name == j['kind']),
-        attendance: AttendanceState.values
-            .firstWhere((a) => a.name == j['attendance']),
+        kind: ParticipantKind.values.firstWhere((k) => k.name == j['kind']),
+        attendance: attendanceStateFromWire(
+          (j['attendance'] as String?) ?? 'notCheckedIn',
+        ),
+        paymentStatus: switch (j['paymentStatus'] as String?) {
+          'paid' => PaymentStatus.paid,
+          'unpaid' => PaymentStatus.unpaid,
+          _ => null,
+        },
       );
 
   Map<String, dynamic> toJson() => {
@@ -125,5 +153,6 @@ class WorkshopParticipant {
         'initials': initials,
         'kind': kind.name,
         'attendance': attendance.name,
+        if (paymentStatus != null) 'paymentStatus': paymentStatus!.name,
       };
 }

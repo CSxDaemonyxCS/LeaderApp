@@ -1,80 +1,101 @@
-import 'dart:math';
-
 import '../../../core/result/result.dart';
+import '../../detachment/domain/detachment_repository.dart';
+import '../../detachment/domain/storage_status.dart';
+import '../../inventory/domain/inventory_models.dart';
+import '../../inventory/domain/inventory_repository.dart';
 import '../../shift/domain/shift_models.dart';
-import '../../team/domain/team_models.dart';
+import '../../team/domain/team_repository.dart';
 import '../domain/home_models.dart';
 import '../domain/home_repository.dart';
+import '../../shift/domain/shift_repository.dart';
 
-/// The Home summary for the signed-in user's active detachment.
+/// Builds the dashboard snapshot by joining the repositories that already own
+/// the data — the same thing a real backend does behind
+/// `GET /api/v1/home/summary`.
 ///
-/// ASSUMPTION: with open decision #6 (Home with several detachments) still
-/// unruled, the mock reports a single active detachment — `d_dam_central`.
-///
-/// Every figure below is consistent with the other mocks: the active shift is
-/// `sh2` from `MockShiftRepository`, the three decisions point at real records
-/// (`sh3`, item `i4`), the low-stock count is d_dam_central's low + empty
-/// lines, and the attendance rate is the last day of that detachment's series.
+/// It composes rather than seeds (the pattern `MockShiftRepository` already
+/// uses for the roster) and that is the point: the earlier version of this
+/// class returned its own hard-coded detachment name, shift, and decision
+/// list, so the dashboard showed figures that existed nowhere else in the app
+/// and carried no id anything could be opened by. Every number below is now
+/// read from the same mock the tab it links to reads from.
 class MockHomeRepository implements HomeRepository {
-  MockHomeRepository();
+  MockHomeRepository({
+    required DetachmentRepository detachments,
+    required ShiftRepository shifts,
+    required InventoryRepository inventory,
+    required TeamRepository team,
+  })  : _detachments = detachments,
+        _shifts = shifts,
+        _inventory = inventory,
+        _team = team;
 
-  final _rand = Random(61);
-
-  Future<void> _latency() => Future<void>.delayed(
-        Duration(milliseconds: 320 + _rand.nextInt(300)),
-      );
+  final DetachmentRepository _detachments;
+  final ShiftRepository _shifts;
+  final InventoryRepository _inventory;
+  final TeamRepository _team;
 
   @override
-  Future<Result<HomeSummary>> summary() async {
-    await _latency();
+  Future<Result<HomeSummary>> summary(String detachmentId) async {
+    final detachment = await _detachments.byId(detachmentId);
+    // A detachment that cannot be read is the whole screen's failure — the
+    // dashboard has nothing to be *about* without it. Its sections degrade
+    // individually below.
+    final record = detachment.when(
+      success: (data, {stale = false}) => data,
+      failure: (_, __) => null,
+      offline: (cached) => cached,
+    );
+    if (record == null) {
+      return detachment.when(
+        success: (_, {stale = false}) => const Failure(
+          'تعذّر تحميل بيانات المفرزة.',
+          code: 'not_found',
+        ),
+        failure: (message, code) => Failure(message, code: code),
+        offline: (_) => const Offline(),
+      );
+    }
+
+    final now = DateTime.now();
+    final today = dateOnly(now);
+    final shifts = await _shifts.listForRange(
+      detachmentId,
+      today.subtract(const Duration(days: 1)),
+      today.add(const Duration(days: 1)),
+    );
+    final items = await _inventory.listForDetachment(detachmentId);
+    final roster = await _team.listForDetachment(detachmentId);
+
+    final shiftList = _dataOr(shifts, const <Shift>[])..sort(_byStart);
+    final itemList = _dataOr(items, const <InventoryItem>[]);
+
     return Success(HomeSummary(
-      detachmentName: 'مفرزة دمشق المركزية',
-      centerName: 'مركز الشعلان',
-      activeShift: Shift(
-        id: 'sh2',
-        detachmentId: 'd_dam_central',
-        // The evening shift of the current day, so Home always has a live
-        // shift to show whenever the app is opened.
-        date: dateOnly(DateTime.now()),
-        centerName: 'مركز الشعلان',
-        startMinutes: 14 * 60,
-        endMinutes: 20 * 60,
-        needed: 10,
-        attendees: const [
-          TeamMember(id: 'm1', name: 'أحمد كنعان', initials: 'أك',
-              role: TeamRole.lead, detachmentId: 'd_dam_central',
-              attendance: AttendanceState.present),
-          TeamMember(id: 'm3', name: 'سامي درويش', initials: 'سد',
-              role: TeamRole.medic, detachmentId: 'd_dam_central',
-              attendance: AttendanceState.late),
-          TeamMember(id: 'm5', name: 'ياسر البكري', initials: 'يب',
-              role: TeamRole.volunteer, detachmentId: 'd_dam_central',
-              attendance: AttendanceState.absent),
-          TeamMember(id: 'm8', name: 'دانا عمر', initials: 'دع',
-              role: TeamRole.medic, detachmentId: 'd_dam_central',
-              attendance: AttendanceState.present),
-        ],
-      ),
-      lockRemaining: const Duration(minutes: 47, seconds: 12),
-      attendancePresent: 5,
-      attendanceTotal: 7,
-      decisions: const [
-        HomeDecisionItem(id: 'dec1', kind: DecisionKind.unfilledShift,
-            title: 'شفت ٢٠–٠٢ · المهاجرين',
-            subtitle: 'تحتاج ٣ متطوعين لسدّ التغطية',
-            actionLabel: 'إسناد'),
-        HomeDecisionItem(id: 'dec2', kind: DecisionKind.expiringStock,
-            title: 'سالبوتامول بخّاخ',
-            subtitle: 'تنتهي خلال ١٠ أيام · المخزون صفر',
-            actionLabel: 'مراجعة'),
-        HomeDecisionItem(id: 'dec3', kind: DecisionKind.joinRequest,
-            title: 'طلب انضمام · مهند سعدون',
-            subtitle: 'مقدَّم قبل ٣ ساعات',
-            actionLabel: 'قرار'),
-      ],
-      workshopsThisWeek: 3,
-      attendanceRatePercent: 90,
-      stockLowCount: 3,
+      detachmentId: record.id,
+      detachmentName: record.name,
+      region: record.region,
+      mainCenter: record.mainCenter,
+      shifts: shiftList,
+      rosterCount: _dataOr(roster, const []).length,
+      storageStatus: storageStatusOf(itemList),
+      lowStockCount: itemList.where((i) => i.level != StockLevel.ok).length,
+      expiringSoonCount: itemList.where((i) {
+        final days = i.daysToExpiry;
+        return days != null && days <= storageExpiringWithinDays;
+      }).length,
     ));
   }
+
+  /// A section that failed degrades to "nothing known" rather than taking the
+  /// screen down with it: the schedule still renders when the store is
+  /// unreachable, and `today_selectors.dart` raises no alert for a section it
+  /// has no records for.
+  static List<T> _dataOr<T>(Result<List<T>> result, List<T> fallback) =>
+      result.when(
+        success: (data, {stale = false}) => List<T>.of(data),
+        failure: (_, __) => List<T>.of(fallback),
+        offline: (cached) => List<T>.of(cached ?? fallback),
+      );
+
+  static int _byStart(Shift a, Shift b) => a.start.compareTo(b.start);
 }

@@ -220,8 +220,7 @@ class _TenantCard extends StatelessWidget {
                   if (tenant.detachmentCount > 0)
                     StatusChip(
                       kind: coverageTone,
-                      label:
-                          '${toArabicIndic('${tenant.coveragePercent}')}٪',
+                      label: '${toArabicIndic('${tenant.coveragePercent}')}٪',
                     ),
                   if (onEdit != null)
                     IconButton(

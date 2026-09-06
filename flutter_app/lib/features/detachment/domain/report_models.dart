@@ -98,9 +98,7 @@ class ReportSpec {
   bool has(ReportSection s) => sections.contains(s);
 
   ReportSpec toggle(ReportSection s) => ReportSpec(
-        sections: has(s)
-            ? ({...sections}..remove(s))
-            : ({...sections}..add(s)),
+        sections: has(s) ? ({...sections}..remove(s)) : ({...sections}..add(s)),
         range: range,
         format: format,
       );
@@ -195,6 +193,7 @@ class ReportDocument {
     required this.generatedAt,
     required this.range,
     required this.blocks,
+    this.headerNote,
   });
 
   final String detachmentName;
@@ -202,6 +201,15 @@ class ReportDocument {
   final DateTime generatedAt;
   final ReportRange range;
   final List<ReportBlock> blocks;
+
+  /// Overrides the small print beside the title. A detachment report is
+  /// scoped by a window ("last 7 days") and says so; a document scoped to one
+  /// dated thing — a workshop — puts that thing's own date there instead,
+  /// because printing a window on it would be a lie.
+  final String? headerNote;
+
+  /// What the header actually prints.
+  String get scopeLabel => headerNote ?? range.label;
 
   bool get isEmpty => blocks.isEmpty;
 
@@ -247,7 +255,6 @@ class ReportDocument {
     return buffer.toString();
   }
 
-  static String _csvRow(List<String> cells) => cells
-      .map((cell) => '"${cell.replaceAll('"', '""')}"')
-      .join(',');
+  static String _csvRow(List<String> cells) =>
+      cells.map((cell) => '"${cell.replaceAll('"', '""')}"').join(',');
 }

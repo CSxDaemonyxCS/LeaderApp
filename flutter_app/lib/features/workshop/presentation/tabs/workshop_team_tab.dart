@@ -67,16 +67,16 @@ class _OrganiserCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.c;
     final roleLabel = switch (member.role) {
-      TeamRole.lead => S.roleLead,
-      TeamRole.medic => S.roleMedic,
-      TeamRole.trainee => S.roleTrainee,
-      TeamRole.volunteer => S.roleVolunteer,
+      TeamRole.shiftSupervisor => S.roleShiftSupervisor,
+      TeamRole.administrator => S.roleAdministrator,
+      TeamRole.followUp => S.roleFollowUp,
+      TeamRole.member => S.roleMember,
     };
     final (kind, label) = switch (member.attendance) {
-      AttendanceState.present => (StatusKind.ok, S.present),
-      AttendanceState.late => (StatusKind.warn, S.late),
+      AttendanceState.checkedIn => (StatusKind.ok, S.checkedIn),
+      AttendanceState.checkedOut => (StatusKind.info, S.checkedOut),
       AttendanceState.absent => (StatusKind.crit, S.absent),
-      AttendanceState.notInvited => (StatusKind.muted, S.notInvited),
+      AttendanceState.notCheckedIn => (StatusKind.muted, S.notCheckedIn),
     };
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -94,9 +94,7 @@ class _OrganiserCard extends StatelessWidget {
               BoxDecoration(color: c.primaryTint, shape: BoxShape.circle),
           child: Text(member.initials,
               style: TextStyle(
-                  color: c.primary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600)),
+                  color: c.primary, fontSize: 14, fontWeight: FontWeight.w600)),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -105,12 +103,9 @@ class _OrganiserCard extends StatelessWidget {
             children: [
               Text(member.name,
                   style: TextStyle(
-                      color: c.ink,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500)),
+                      color: c.ink, fontSize: 15, fontWeight: FontWeight.w500)),
               const SizedBox(height: 2),
-              Text(roleLabel,
-                  style: TextStyle(color: c.ink3, fontSize: 12)),
+              Text(roleLabel, style: TextStyle(color: c.ink3, fontSize: 12)),
             ],
           ),
         ),

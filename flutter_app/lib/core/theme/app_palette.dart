@@ -3,7 +3,12 @@ import 'package:flutter/material.dart';
 /// Design tokens — mirror the exact values in `tokens.css` used by the
 /// admin dashboards already shipped in this workspace. Do NOT invent new
 /// colors here. Any new surface must be derived from these tokens.
-enum PaletteId { slate, copper, clay }
+///
+/// [medical] is the default: the clean clinical green-on-white the app opens
+/// with. [slate]/[copper]/[clay] are the original earthy set; [indigo] and
+/// [teal] are two cooler alternates. Eye-protect is NOT a palette — it is a
+/// warm low-blue wash applied on top of any of these, see [AppColors.warmed].
+enum PaletteId { medical, slate, copper, clay, indigo, teal }
 
 class AppColors {
   const AppColors({
@@ -229,14 +234,257 @@ class AppColors {
     focus: Color(0xFFC55643),
   );
 
+  // -----------------------------------------------------------
+  // Medical — light  (the default: clean clinical green on white)
+  // -----------------------------------------------------------
+  static const AppColors medicalLight = AppColors(
+    bg: Color(0xFFEEF2EF),
+    surface: Color(0xFFFFFFFF),
+    surface2: Color(0xFFF1F6F3),
+    surface3: Color(0xFFE0E9E3),
+    ink: Color(0xFF15201B),
+    ink2: Color(0xFF44514A),
+    ink3: Color(0xFF76847C),
+    line: Color(0xFFD7E1DB),
+    line2: Color(0xFFC0CDC4),
+    primary: Color(0xFF1B7F51),
+    primaryInk: Color(0xFFFFFFFF),
+    primaryPressed: Color(0xFF13653F),
+    primaryTint: Color(0xFFDDF0E6),
+    ok: Color(0xFF15803D),
+    okTint: Color(0xFFDCF0E3),
+    warn: Color(0xFFC8860A),
+    warnTint: Color(0xFFF8EBCF),
+    crit: Color(0xFF851C16),
+    critTint: Color(0xFFF6DAD7),
+    info: Color(0xFF1B6B98),
+    infoTint: Color(0xFFD9EBF4),
+    muted: Color(0xFF7C8B84),
+    mutedTint: Color(0xFFE3E9E5),
+    focus: Color(0xFF1B7F51),
+  );
+
+  static const AppColors medicalDark = AppColors(
+    bg: Color(0xFF0D1411),
+    surface: Color(0xFF141D18),
+    surface2: Color(0xFF1B2620),
+    surface3: Color(0xFF243029),
+    ink: Color(0xFFE7EEE9),
+    ink2: Color(0xFFAAB7B0),
+    ink3: Color(0xFF6E7C74),
+    line: Color(0xFF27332C),
+    line2: Color(0xFF37453C),
+    primary: Color(0xFF3FB27B),
+    primaryInk: Color(0xFF0E2E1F),
+    primaryPressed: Color(0xFF1E8E5A),
+    primaryTint: Color(0xFF10301F),
+    ok: Color(0xFF3AB878),
+    okTint: Color(0xFF123626),
+    warn: Color(0xFFE0A63D),
+    warnTint: Color(0xFF382A10),
+    crit: Color(0xFFE2554A),
+    critTint: Color(0xFF3B1A17),
+    info: Color(0xFF4C9BCB),
+    infoTint: Color(0xFF13293A),
+    muted: Color(0xFF85938B),
+    mutedTint: Color(0xFF283029),
+    focus: Color(0xFF3FB27B),
+  );
+
+  // -----------------------------------------------------------
+  // Indigo — light
+  // -----------------------------------------------------------
+  static const AppColors indigoLight = AppColors(
+    bg: Color(0xFFEBECF2),
+    surface: Color(0xFFFFFFFF),
+    surface2: Color(0xFFF1F2F8),
+    surface3: Color(0xFFDFE1EE),
+    ink: Color(0xFF161826),
+    ink2: Color(0xFF464A61),
+    ink3: Color(0xFF767B93),
+    line: Color(0xFFD5D8E6),
+    line2: Color(0xFFBEC2D6),
+    primary: Color(0xFF4340C4),
+    primaryInk: Color(0xFFFFFFFF),
+    primaryPressed: Color(0xFF3633A6),
+    primaryTint: Color(0xFFE2E2F7),
+    ok: Color(0xFF1C8066),
+    okTint: Color(0xFFD9F0E8),
+    warn: Color(0xFFC28A1E),
+    warnTint: Color(0xFFF5E9C8),
+    crit: Color(0xFF831C16),
+    critTint: Color(0xFFF3D9D6),
+    info: Color(0xFF2C699E),
+    infoTint: Color(0xFFDBEAF5),
+    muted: Color(0xFF7C8195),
+    mutedTint: Color(0xFFE0E2EE),
+    focus: Color(0xFF4340C4),
+  );
+
+  static const AppColors indigoDark = AppColors(
+    bg: Color(0xFF0C0D18),
+    surface: Color(0xFF141625),
+    surface2: Color(0xFF1B1E31),
+    surface3: Color(0xFF23273F),
+    ink: Color(0xFFE9EAF3),
+    ink2: Color(0xFFA9AEC5),
+    ink3: Color(0xFF6F7593),
+    line: Color(0xFF262A44),
+    line2: Color(0xFF363B5C),
+    primary: Color(0xFF7B79E8),
+    primaryInk: Color(0xFF05041F),
+    primaryPressed: Color(0xFF4340C4),
+    primaryTint: Color(0xFF1E1D3E),
+    ok: Color(0xFF35B48D),
+    okTint: Color(0xFF11362A),
+    warn: Color(0xFFDDA43B),
+    warnTint: Color(0xFF38290F),
+    crit: Color(0xFFDB5445),
+    critTint: Color(0xFF3B1A15),
+    info: Color(0xFF5B9CD8),
+    infoTint: Color(0xFF162A45),
+    muted: Color(0xFF868BA2),
+    mutedTint: Color(0xFF272B45),
+    focus: Color(0xFF7B79E8),
+  );
+
+  // -----------------------------------------------------------
+  // Teal — light
+  // -----------------------------------------------------------
+  static const AppColors tealLight = AppColors(
+    bg: Color(0xFFE9EFEE),
+    surface: Color(0xFFFFFFFF),
+    surface2: Color(0xFFEFF5F4),
+    surface3: Color(0xFFDCE7E5),
+    ink: Color(0xFF12201F),
+    ink2: Color(0xFF42514F),
+    ink3: Color(0xFF738381),
+    line: Color(0xFFD2DEDC),
+    line2: Color(0xFFB9C9C6),
+    primary: Color(0xFF0F7B85),
+    primaryInk: Color(0xFFFFFFFF),
+    primaryPressed: Color(0xFF0B626A),
+    primaryTint: Color(0xFFD6ECEE),
+    ok: Color(0xFF1C8151),
+    okTint: Color(0xFFDCF0E5),
+    warn: Color(0xFFC2870F),
+    warnTint: Color(0xFFF6E9C9),
+    crit: Color(0xFF7C251E),
+    critTint: Color(0xFFF0DAD5),
+    info: Color(0xFF206B91),
+    infoTint: Color(0xFFD9E9F2),
+    muted: Color(0xFF778784),
+    mutedTint: Color(0xFFDFE8E6),
+    focus: Color(0xFF0F7B85),
+  );
+
+  static const AppColors tealDark = AppColors(
+    bg: Color(0xFF091413),
+    surface: Color(0xFF101D1C),
+    surface2: Color(0xFF162625),
+    surface3: Color(0xFF1F302F),
+    ink: Color(0xFFE5EEED),
+    ink2: Color(0xFFA7B6B4),
+    ink3: Color(0xFF6C7C79),
+    line: Color(0xFF223231),
+    line2: Color(0xFF324442),
+    primary: Color(0xFF29AAB4),
+    primaryInk: Color(0xFF08292C),
+    primaryPressed: Color(0xFF0F7C86),
+    primaryTint: Color(0xFF0B3033),
+    ok: Color(0xFF35B48D),
+    okTint: Color(0xFF11362A),
+    warn: Color(0xFFDDA43B),
+    warnTint: Color(0xFF38290F),
+    crit: Color(0xFFDB5445),
+    critTint: Color(0xFF3B1A15),
+    info: Color(0xFF5B9CD8),
+    infoTint: Color(0xFF162A45),
+    muted: Color(0xFF849492),
+    mutedTint: Color(0xFF243433),
+    focus: Color(0xFF29AAB4),
+  );
+
   static AppColors resolve(PaletteId id, Brightness brightness) {
     final isLight = brightness == Brightness.light;
     return switch (id) {
+      PaletteId.medical => isLight ? medicalLight : medicalDark,
       PaletteId.slate => isLight ? slateLight : slateDark,
       PaletteId.copper => isLight ? copperLight : copperDark,
       PaletteId.clay => isLight ? clayLight : clayDark,
+      PaletteId.indigo => isLight ? indigoLight : indigoDark,
+      PaletteId.teal => isLight ? tealLight : tealDark,
     };
   }
+
+  /// Eye-protect: a warm, low-blue wash of this palette.
+  ///
+  /// Not a palette of its own — it recolours already-resolved tokens toward
+  /// amber so it composes with all six and with both light and dark. The
+  /// surfaces move most, text moves a little so contrast holds, and the
+  /// semantic colours (ok / warn / crit / info) are left untouched so a
+  /// warning still reads as a warning through the filter.
+  AppColors warmed() => _warmCache[this] ??= _buildWarmed();
+
+  /// Warms the **ground only** — backgrounds, surfaces, hairlines and the
+  /// status tints. Text, icons, the primary and every semantic colour come
+  /// back untouched.
+  ///
+  /// That asymmetry is the whole design. A filter that warms the foreground
+  /// too pulls dark text up toward the amber and light text down into it, and
+  /// the screen loses contrast exactly where it is read. Moving only the
+  /// ground keeps every foreground/background pair above the floors asserted
+  /// by `test/core/theme/palette_contrast_test.dart`.
+  ///
+  /// One factor for every ground token, rather than a per-token table: the
+  /// palettes encode their depth in the *gaps* between `bg`, `surface` and
+  /// `surface2`, and warming those at different rates flattens the hierarchy
+  /// the layout depends on. A single pull moves them together.
+  ///
+  /// The target and the strength are picked per brightness. A light theme
+  /// drifts toward a paper cream; a dark theme toward a warm coal, and more
+  /// gently, because a dark ground reaches its target far sooner.
+  AppColors _buildWarmed() {
+    // Read from the palette's own background rather than from a flag, so the
+    // transform stays correct for any palette added later.
+    final dark = bg.computeLuminance() < 0.5;
+    final target = dark ? const Color(0xFF2A1C08) : const Color(0xFFFFE7C2);
+    final amount = dark ? 0.28 : 0.40;
+    Color w(Color base) => Color.lerp(base, target, amount) ?? base;
+
+    return AppColors(
+      bg: w(bg),
+      surface: w(surface),
+      surface2: w(surface2),
+      surface3: w(surface3),
+      ink: ink,
+      ink2: ink2,
+      ink3: ink3,
+      line: w(line),
+      line2: w(line2),
+      primary: primary,
+      primaryInk: primaryInk,
+      primaryPressed: primaryPressed,
+      primaryTint: w(primaryTint),
+      ok: ok,
+      okTint: w(okTint),
+      warn: warn,
+      warnTint: w(warnTint),
+      crit: crit,
+      critTint: w(critTint),
+      info: info,
+      infoTint: w(infoTint),
+      muted: muted,
+      mutedTint: w(mutedTint),
+      focus: focus,
+    );
+  }
+
+  /// `MaterialApp` rebuilds its `ThemeData` on every frame that touches the
+  /// root, and the wash is ~15 blends. There are only twelve palette
+  /// variants, all canonical `const` instances, so memoising on identity
+  /// bounds the work to one pass each for the life of the isolate.
+  static final Map<AppColors, AppColors> _warmCache = {};
 }
 
 /// Access colors from context via `Theme.of(context).extension<AppColors>()`.
@@ -252,7 +500,8 @@ class AppColorsExt extends ThemeExtension<AppColorsExt> {
   ThemeExtension<AppColorsExt> lerp(
     covariant ThemeExtension<AppColorsExt>? other,
     double t,
-  ) => this;
+  ) =>
+      this;
 }
 
 extension AppColorsX on BuildContext {

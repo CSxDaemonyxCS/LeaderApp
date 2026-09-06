@@ -44,7 +44,7 @@ class _DetachmentMemberEditPageState
   final _department = TextEditingController();
   final _number = TextEditingController();
 
-  TeamRole _role = TeamRole.volunteer;
+  TeamRole _role = TeamRole.member;
   bool _seeded = false;
   bool _saving = false;
 
@@ -100,8 +100,8 @@ class _DetachmentMemberEditPageState
 
     // The role is its own capability, so someone who may correct a spelling
     // is not thereby able to promote a member to detachment lead.
-    final canAssignRole = ref.capabilities
-        .canIn(widget.detachmentId, Cap.memberRoleAssign);
+    final canAssignRole =
+        ref.capabilities.canIn(widget.detachmentId, Cap.memberRoleAssign);
 
     return Form(
       key: _formKey,
@@ -145,7 +145,8 @@ class _DetachmentMemberEditPageState
           const SizedBox(height: AppSpacing.xxl),
           FilledButton(
             onPressed: _saving ? null : onSave,
-            child: Text(_saving ? S.savedOk : (_isNew ? S.save : S.saveChanges)),
+            child:
+                Text(_saving ? S.savedOk : (_isNew ? S.save : S.saveChanges)),
           ),
           const SizedBox(height: AppSpacing.sm),
           TextButton(
@@ -299,8 +300,7 @@ class _Field extends StatelessWidget {
           inputFormatters: inputFormatters,
           textInputAction: textInputAction,
           decoration: InputDecoration(hintText: hint),
-          validator: (v) =>
-              (v == null || v.trim().isEmpty) ? S.required : null,
+          validator: (v) => (v == null || v.trim().isEmpty) ? S.required : null,
         ),
         if (help != null) ...[
           const SizedBox(height: 6),
@@ -320,10 +320,18 @@ class _RoleSelector extends StatelessWidget {
   final ValueChanged<TeamRole>? onChanged;
 
   static const _rows = [
-    (TeamRole.lead, S.roleLead, Icons.workspace_premium_rounded),
-    (TeamRole.medic, S.roleMedic, Icons.medical_services_rounded),
-    (TeamRole.trainee, S.roleTrainee, Icons.school_rounded),
-    (TeamRole.volunteer, S.roleVolunteer, Icons.volunteer_activism_rounded),
+    (
+      TeamRole.shiftSupervisor,
+      S.roleShiftSupervisor,
+      Icons.workspace_premium_rounded
+    ),
+    (
+      TeamRole.administrator,
+      S.roleAdministrator,
+      Icons.admin_panel_settings_rounded
+    ),
+    (TeamRole.followUp, S.roleFollowUp, Icons.follow_the_signs_rounded),
+    (TeamRole.member, S.roleMember, Icons.person_rounded),
   ];
 
   @override

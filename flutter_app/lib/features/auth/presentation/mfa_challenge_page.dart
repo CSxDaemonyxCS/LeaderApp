@@ -27,8 +27,7 @@ class _MfaChallengePageState extends ConsumerState<MfaChallengePage> {
   @override
   void initState() {
     super.initState();
-    _controllers =
-        List.generate(_len, (_) => TextEditingController());
+    _controllers = List.generate(_len, (_) => TextEditingController());
     _nodes = List.generate(_len, (_) => FocusNode());
   }
 
@@ -87,7 +86,8 @@ class _MfaChallengePageState extends ConsumerState<MfaChallengePage> {
               children: [
                 for (int i = 0; i < _len; i++)
                   SizedBox(
-                    width: 46, height: 56,
+                    width: 46,
+                    height: 56,
                     child: TextField(
                       controller: _controllers[i],
                       focusNode: _nodes[i],
@@ -102,8 +102,7 @@ class _MfaChallengePageState extends ConsumerState<MfaChallengePage> {
                         contentPadding: EdgeInsets.zero,
                         counterText: '',
                         border: OutlineInputBorder(
-                          borderRadius:
-                              BorderRadius.circular(AppRadii.md),
+                          borderRadius: BorderRadius.circular(AppRadii.md),
                           borderSide: BorderSide(color: c.line2),
                         ),
                       ),
@@ -123,15 +122,15 @@ class _MfaChallengePageState extends ConsumerState<MfaChallengePage> {
           ),
           if (_error != null) ...[
             const SizedBox(height: AppSpacing.md),
-            Text(_error!,
-                style: TextStyle(color: c.crit, fontSize: 13)),
+            Text(_error!, style: TextStyle(color: c.crit, fontSize: 13)),
           ],
           const SizedBox(height: AppSpacing.xl),
           FilledButton(
             onPressed: _busy ? null : _submit,
             child: _busy
                 ? SizedBox(
-                    width: 22, height: 22,
+                    width: 22,
+                    height: 22,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: c.primaryInk),
                   )

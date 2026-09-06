@@ -8,6 +8,7 @@ import '../../../core/motion/transitions.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/animated_tab_bar.dart';
 import '../../../core/widgets/offline_banner.dart';
+import '../../../core/widgets/swipe_tabs.dart';
 import '../../../l10n/strings.dart';
 import '../data/workshop_providers.dart';
 
@@ -74,7 +75,15 @@ class WorkshopDetailShell extends ConsumerWidget {
           onChanged: (i) =>
               context.go('/workshop/$workshopId/${_tabs[i].path}'),
         ),
-        Expanded(child: TabCrossFade(child: child)),
+        Expanded(
+          child: SwipeTabs(
+            currentIndex: idx,
+            tabCount: _tabs.length,
+            onSwitch: (i) =>
+                context.go('/workshop/$workshopId/${_tabs[i].path}'),
+            child: TabSwitchTransition(index: idx, child: child),
+          ),
+        ),
       ]),
     );
   }

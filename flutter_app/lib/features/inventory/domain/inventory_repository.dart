@@ -15,6 +15,9 @@ abstract class InventoryRepository {
     required String unit,
     required int openingStock,
     required int minimum,
+    PackagingUnit openingUnit = PackagingUnit.individual,
+    int unitsPerStrip = 1,
+    int stripsPerCarton = 1,
     DateTime? expiresOn,
   });
 
@@ -26,6 +29,9 @@ abstract class InventoryRepository {
     required String name,
     required String unit,
     required int minimum,
+    int? unitsPerStrip,
+    int? stripsPerCarton,
+    PackagingUnit? preferredUnit,
     DateTime? expiresOn,
   });
 
@@ -36,5 +42,9 @@ abstract class InventoryRepository {
     required MovementDirection direction,
     required int quantity,
     required String reason,
+    PackagingUnit packagingUnit = PackagingUnit.individual,
+    String? source,
+    String? performedBy,
+    String? performedByName,
   });
 }

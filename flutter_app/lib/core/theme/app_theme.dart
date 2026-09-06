@@ -24,10 +24,22 @@ class AppSpacing {
 }
 
 class AppTheme {
-  static ThemeData light(PaletteId palette) =>
-      _build(AppColors.resolve(palette, Brightness.light), Brightness.light);
-  static ThemeData dark(PaletteId palette) =>
-      _build(AppColors.resolve(palette, Brightness.dark), Brightness.dark);
+  static ThemeData light(PaletteId palette, {bool eyeProtect = false}) =>
+      _build(_colors(palette, Brightness.light, eyeProtect), Brightness.light);
+  static ThemeData dark(PaletteId palette, {bool eyeProtect = false}) =>
+      _build(_colors(palette, Brightness.dark, eyeProtect), Brightness.dark);
+
+  /// Resolves the palette for [brightness], then applies the eye-protect
+  /// warm wash on top when asked. Eye-protect is orthogonal to the palette
+  /// and to light/dark — it is the last transform before the theme is built.
+  static AppColors _colors(
+    PaletteId palette,
+    Brightness brightness,
+    bool eyeProtect,
+  ) {
+    final base = AppColors.resolve(palette, brightness);
+    return eyeProtect ? base.warmed() : base;
+  }
 
   static ThemeData _build(AppColors c, Brightness brightness) {
     final base = brightness == Brightness.light

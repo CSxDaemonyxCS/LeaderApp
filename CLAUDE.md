@@ -19,6 +19,17 @@ This repository contains the Flutter frontend for Medical Teams Management. Work
 - Respect `MediaQuery.disableAnimations` and accessible navigation. Motion must clarify an interaction, never delay it.
 - Keep changes small, focused, and consistent with the existing design language. Verify with the relevant Flutter checks when the requested work includes code changes.
 
+## Theme system
+
+- All colour lives in `flutter_app/lib/core/theme/app_palette.dart` as `AppColors` token sets. Read tokens via `context.c` (e.g. `context.c.surface`); never hard-code a colour, radius, or spacing value.
+- Six palettes: `PaletteId { medical, slate, copper, clay, indigo, teal }`. **`medical`** (clinical green on white) is the default. Each has a full light + dark `AppColors` const; `AppColors.resolve(id, brightness)` picks one.
+- **Eye-protect mode** is orthogonal to the palette and to light/dark: `ThemeState.eyeProtect` (bool) makes `AppTheme.light/dark` run the resolved palette through `AppColors.warmed()`. That wash moves the **ground only** — bg, surfaces, hairlines, status tints — and never the ink, the primary or a semantic colour, because warming a foreground is what costs contrast where text is read. Do not model it as a palette.
+- `ThemeState` lives in `core/theme/theme_state.dart` (its own file because `SettingsRepository` persists that shape). `ThemeController` is an `AsyncNotifier` that hydrates from `SettingsRepository.themePrefs()` and writes back on every change. **Read the theme with `themeStateProvider`**, which serves `ThemeState.initial()` until the stored value lands; only call `.notifier` to change it.
+- The shipped `MockSettingsRepository` stores theme preferences only for the lifetime of that repository object. The controller/repository seam is complete, but there is no durable device-relaunch persistence until a concrete repository writes `ThemeState.toJson()` to local storage or the backend. Tests that create a fresh provider container deliberately reuse one repository instance.
+- Settings exposes light, dark and `ThemeMode.system`. Every palette pill includes a preview swatch resolved for the brightness currently on screen, and `_ChoicePill` owns its selected/button/tap semantics.
+- **Contrast is enforced by test**, not by eye: `test/core/theme/palette_contrast_test.dart` holds every palette to floors derived from the original `slate`/`copper`/`clay` tokens, requires the later palettes (`medical`/`indigo`/`teal`) to clear WCAG AA on the filled-button label, and bounds what eye-protect may cost. Run it after touching any hex value.
+- Adding a palette: add the enum value, a light + dark `AppColors` const, a `resolve` switch arm, and a pill in the settings loop. `tenant_flow_smoke_test.dart` covers "every palette builds"; the contrast test covers "every palette is legible" — expect it to fail first and tune the hex until it passes.
+
 ## Available frontend/design skills
 
 - `frontend-design` — intentional visual direction and design planning.

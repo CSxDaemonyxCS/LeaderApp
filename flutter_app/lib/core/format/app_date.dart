@@ -64,8 +64,7 @@ abstract final class AppDate {
       '${hm(startMinutes)} – ${hm(endMinutes)}';
 
   /// `١٢ أيلول – ١٨ أيلول` for a week beginning at [weekStart].
-  static String weekRange(DateTime weekStart) =>
-      '${dayMonth(weekStart)} – '
+  static String weekRange(DateTime weekStart) => '${dayMonth(weekStart)} – '
       '${dayMonth(weekStart.add(const Duration(days: 6)))}';
 
   /// `٠٨:٠٠ – ١٤:٠٠` from two whole hours.
@@ -74,14 +73,13 @@ abstract final class AppDate {
       '${toArabicIndic(endHour.toString().padLeft(2, '0'))}:٠٠';
 
   /// Whole days between now and [d]; negative when [d] is in the past.
-  static int daysFromNow(DateTime d) =>
-      DateTime(d.year, d.month, d.day)
-          .difference(DateTime(
-            DateTime.now().year,
-            DateTime.now().month,
-            DateTime.now().day,
-          ))
-          .inDays;
+  static int daysFromNow(DateTime d) => DateTime(d.year, d.month, d.day)
+      .difference(DateTime(
+        DateTime.now().year,
+        DateTime.now().month,
+        DateTime.now().day,
+      ))
+      .inDays;
 
   /// `قبل ٣ أيام` / `بعد ٤ أيام` / `اليوم`.
   static String relativeDays(DateTime d) {

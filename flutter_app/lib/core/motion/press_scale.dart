@@ -44,8 +44,8 @@ class _PressScaleState extends State<PressScale> {
       onLongPress: widget.enabled ? widget.onLongPress : null,
       child: AnimatedScale(
         scale: reduceMotion(context) ? 1.0 : target,
-        duration: MotionTokens.micro,
-        curve: MotionTokens.standard,
+        duration: effectiveDuration(context, MotionTokens.micro),
+        curve: effectiveCurve(context, MotionTokens.standard),
         child: widget.child,
       ),
     );

@@ -2,9 +2,18 @@ import 'dart:math';
 
 import '../../../core/result/result.dart';
 import '../../team/domain/team_models.dart';
+import '../../../l10n/strings.dart';
 import '../../team/domain/team_repository.dart';
+import '../domain/attendance_correction.dart';
+import '../domain/attendance_policy.dart';
 import '../domain/shift_models.dart';
 import '../domain/shift_repository.dart';
+
+class _AttendanceValidation implements Exception {
+  const _AttendanceValidation(this.code);
+
+  final String code;
+}
 
 /// In-memory schedule for every active detachment.
 ///
@@ -18,11 +27,15 @@ import '../domain/shift_repository.dart';
 ///    something in it whenever the app is opened — including a filled last
 ///    week, which is what makes "copy last week" demonstrable.
 class MockShiftRepository implements ShiftRepository {
-  MockShiftRepository(this._directory) {
+  /// [clock] is injectable so a test can pin "now" for the one-hour
+  /// attendance window; production passes nothing and gets [DateTime.now].
+  MockShiftRepository(this._directory, {DateTime Function()? clock})
+      : _clock = clock ?? DateTime.now {
     _seed();
   }
 
   final TeamRepository _directory;
+  final DateTime Function() _clock;
   final _rand = Random(31);
 
   final List<Shift> _shifts = [];
@@ -30,6 +43,7 @@ class MockShiftRepository implements ShiftRepository {
 
   int _nextShift = 1;
   int _nextTemplate = 1;
+  int _nextCorrection = 1;
 
   // ---------------------------------------------------------------------
   // Seed
@@ -39,37 +53,60 @@ class MockShiftRepository implements ShiftRepository {
   /// assigned to each. Distinct per detachment on purpose: switching
   /// detachments has to show a visibly different week, otherwise a scoping
   /// leak looks the same as correct behaviour.
-  static const _plan = <String, List<(int weekday, ShiftPeriod period,
-      String center, int needed, List<String> members)>>{
+  static const _plan = <String,
+      List<
+          (
+            int weekday,
+            ShiftPeriod period,
+            String center,
+            int needed,
+            List<String> members
+          )>>{
     'd_dam_central': [
-      (DateTime.saturday, ShiftPeriod.morning, 'مركز الشعلان', 8,
-          ['m1', 'm2', 'm4', 'm7']),
-      (DateTime.saturday, ShiftPeriod.evening, 'مركز الشعلان', 6,
-          ['m3', 'm8']),
-      (DateTime.sunday, ShiftPeriod.morning, 'مركز الشعلان', 6,
-          ['m1', 'm10']),
+      (
+        DateTime.saturday,
+        ShiftPeriod.morning,
+        'مركز الشعلان',
+        8,
+        ['m1', 'm2', 'm4', 'm7']
+      ),
+      (DateTime.saturday, ShiftPeriod.evening, 'مركز الشعلان', 6, ['m3', 'm8']),
+      (DateTime.sunday, ShiftPeriod.morning, 'مركز الشعلان', 6, ['m1', 'm10']),
       (DateTime.monday, ShiftPeriod.evening, 'مركز المهاجرين', 8, ['m2']),
       (DateTime.wednesday, ShiftPeriod.night, 'مركز المهاجرين', 5, []),
-      (DateTime.thursday, ShiftPeriod.morning, 'مركز الشعلان', 7,
-          ['m1', 'm5', 'm9']),
+      (
+        DateTime.thursday,
+        ShiftPeriod.morning,
+        'مركز الشعلان',
+        7,
+        ['m1', 'm5', 'm9']
+      ),
     ],
     'd_dam_rural': [
-      (DateTime.saturday, ShiftPeriod.morning, 'مركز داريا', 6,
-          ['m11', 'm12', 'm16']),
+      (
+        DateTime.saturday,
+        ShiftPeriod.morning,
+        'مركز داريا',
+        6,
+        ['m11', 'm12', 'm16']
+      ),
       (DateTime.monday, ShiftPeriod.evening, 'مركز صحنايا', 6, ['m13']),
-      (DateTime.tuesday, ShiftPeriod.morning, 'مركز داريا', 4,
-          ['m11', 'm18']),
+      (DateTime.tuesday, ShiftPeriod.morning, 'مركز داريا', 4, ['m11', 'm18']),
       (DateTime.friday, ShiftPeriod.evening, 'مركز صحنايا', 5, ['m17']),
     ],
     'd_homs': [
-      (DateTime.sunday, ShiftPeriod.morning, 'مركز الوعر', 5,
-          ['m14', 'm19']),
+      (DateTime.sunday, ShiftPeriod.morning, 'مركز الوعر', 5, ['m14', 'm19']),
       (DateTime.tuesday, ShiftPeriod.evening, 'مركز الوعر', 5, ['m20']),
       (DateTime.thursday, ShiftPeriod.night, 'مركز الوعر', 4, ['m14']),
     ],
     'd_coast': [
-      (DateTime.saturday, ShiftPeriod.morning, 'مركز اللاذقية', 4,
-          ['m15', 'm23']),
+      (
+        DateTime.saturday,
+        ShiftPeriod.morning,
+        'مركز اللاذقية',
+        4,
+        ['m15', 'm23']
+      ),
       (DateTime.wednesday, ShiftPeriod.evening, 'مركز جبلة', 5, ['m24']),
     ],
     // d_north_arch is archived and runs no shifts.
@@ -83,11 +120,15 @@ class MockShiftRepository implements ShiftRepository {
       for (final row in entry.value) {
         final (weekday, period, center, needed, members) = row;
         final times = period.times!;
+        final lastDay = _dayOfWeek(lastWeek, weekday);
+        final thisDay = _dayOfWeek(thisWeek, weekday);
         _templates.add(ShiftTemplate(
           id: 'tpl${_nextTemplate++}',
           detachmentId: entry.key,
           centerName: center,
-          weekday: weekday,
+          // The template carries the two days it has actually run so far. A
+          // real detachment would extend this set forward as it schedules.
+          dates: [lastDay, thisDay],
           startMinutes: times.$1,
           endMinutes: times.$2,
           needed: needed,
@@ -98,19 +139,28 @@ class MockShiftRepository implements ShiftRepository {
         // little fuller so the two weeks read differently at a glance.
         for (final (weekStart, ids) in [
           (lastWeek, members),
-          (thisWeek, members.take(members.length - (members.isEmpty ? 0 : 1))
-              .toList()),
+          (
+            thisWeek,
+            members.take(members.length - (members.isEmpty ? 0 : 1)).toList()
+          ),
         ]) {
+          final shiftDate = _dayOfWeek(weekStart, weekday);
           _shifts.add(Shift(
             id: 'sh${_nextShift++}',
             detachmentId: entry.key,
             templateId: templateId,
-            date: _dayOfWeek(weekStart, weekday),
+            date: shiftDate,
             centerName: center,
             startMinutes: times.$1,
             endMinutes: times.$2,
             needed: needed,
-            attendees: _placeholders(entry.key, ids),
+            attendees: _placeholders(
+              entry.key,
+              ids,
+              shiftDate,
+              times,
+              completed: weekStart == lastWeek,
+            ),
           ));
         }
       }
@@ -124,16 +174,38 @@ class MockShiftRepository implements ShiftRepository {
   /// Seed attendees are placeholders carrying only an id; every read
   /// re-resolves them against the live roster in [_hydrate], so a member
   /// renamed or deleted on the Members tab is renamed or gone here too.
-  static List<TeamMember> _placeholders(String detachmentId, List<String> ids) =>
+  static List<TeamMember> _placeholders(
+    String detachmentId,
+    List<String> ids,
+    DateTime date,
+    (int, int) times, {
+    required bool completed,
+  }) =>
       [
-        for (final id in ids)
+        for (final (index, id) in ids.indexed)
           TeamMember(
             id: id,
             name: '',
             initials: '',
-            role: TeamRole.volunteer,
+            role: TeamRole.member,
             detachmentId: detachmentId,
-            attendance: AttendanceState.notInvited,
+            // Every third seeded attendee of a finished shift did not come, so
+            // the absence path — statistics, report rows, the absent chip —
+            // has real data behind it. The rosters are small, so a wider
+            // modulus would silently never fire.
+            attendance: completed
+                ? index % 3 == 2
+                    ? AttendanceState.absent
+                    : AttendanceState.checkedOut
+                : AttendanceState.notCheckedIn,
+            checkInAt: completed && index % 3 != 2
+                ? date.add(Duration(minutes: times.$1))
+                : null,
+            checkOutAt: completed && index % 3 != 2
+                ? date
+                    .add(Duration(days: times.$2 <= times.$1 ? 1 : 0))
+                    .add(Duration(minutes: times.$2))
+                : null,
           ),
       ];
 
@@ -161,7 +233,12 @@ class MockShiftRepository implements ShiftRepository {
     final by = {for (final m in roster) m.id: m};
     final attendees = <TeamMember>[
       for (final a in shift.attendees)
-        if (by[a.id] != null) by[a.id]!.copyWith(attendance: a.attendance),
+        if (by[a.id] != null)
+          by[a.id]!.copyWith(
+            attendance: a.attendance,
+            checkInAt: a.checkInAt,
+            checkOutAt: a.checkOutAt,
+          ),
     ];
     return shift.copyWith(attendees: attendees);
   }
@@ -200,6 +277,27 @@ class MockShiftRepository implements ShiftRepository {
   }
 
   @override
+  Future<Result<List<Shift>>> listForRange(
+    String detachmentId,
+    DateTime from,
+    DateTime to,
+  ) async {
+    await _latency();
+    final start = dateOnly(from);
+    final end = dateOnly(to).add(const Duration(days: 1));
+    final range = _shifts
+        .where(
+          (shift) =>
+              shift.detachmentId == detachmentId &&
+              !shift.date.isBefore(start) &&
+              shift.date.isBefore(end),
+        )
+        .toList()
+      ..sort(_order);
+    return Success(await _hydrateAll(detachmentId, range));
+  }
+
+  @override
   Future<Result<List<Shift>>> listForDetachmentToday(
       String detachmentId) async {
     await _latency();
@@ -233,7 +331,7 @@ class MockShiftRepository implements ShiftRepository {
     required int startMinutes,
     required int endMinutes,
     required int needed,
-    bool repeatWeekly = false,
+    List<DateTime> repeatOn = const [],
   }) async {
     await _latency();
     if (startMinutes == endMinutes) {
@@ -249,13 +347,19 @@ class MockShiftRepository implements ShiftRepository {
     }
 
     final day = dateOnly(date);
+    final center = centerName.trim();
+
+    // The anchor day is always part of the repeat set. Anything else in
+    // [repeatOn] joins it; one day on its own is not a repeat.
+    final repeatDays = <DateTime>{day, for (final d in repeatOn) dateOnly(d)};
+
     String? templateId;
-    if (repeatWeekly) {
+    if (repeatDays.length > 1) {
       final template = ShiftTemplate(
         id: 'tpl${_nextTemplate++}',
         detachmentId: detachmentId,
-        centerName: centerName.trim(),
-        weekday: day.weekday,
+        centerName: center,
+        dates: repeatDays,
         startMinutes: startMinutes,
         endMinutes: endMinutes,
         needed: needed,
@@ -264,19 +368,188 @@ class MockShiftRepository implements ShiftRepository {
       templateId = template.id;
     }
 
-    final shift = Shift(
-      id: 'sh${_nextShift++}',
-      detachmentId: detachmentId,
+    Shift make(DateTime on) => Shift(
+          id: 'sh${_nextShift++}',
+          detachmentId: detachmentId,
+          templateId: templateId,
+          date: on,
+          centerName: center,
+          startMinutes: startMinutes,
+          endMinutes: endMinutes,
+          needed: needed,
+          attendees: const [],
+        );
+
+    final anchor = make(day);
+    _shifts.add(anchor);
+
+    if (templateId != null) {
+      for (final on in repeatDays) {
+        if (on == day) continue;
+        // Dedupe: never stack a second shift on a day+time that already has one.
+        if (_exists(detachmentId, on, startMinutes)) continue;
+        _shifts.add(make(on));
+      }
+    }
+    return Success(anchor);
+  }
+
+  @override
+  Future<Result<ShiftTemplate>> updateRepeat(
+    String shiftId,
+    List<DateTime> dates,
+  ) async {
+    await _latency();
+    final i = _indexOf(shiftId);
+    if (i < 0) return const Failure('لم يُعثر على الشفت.', code: 'not_found');
+    final anchor = _shifts[i];
+
+    final wanted = <DateTime>{
+      dateOnly(anchor.date),
+      for (final d in dates) dateOnly(d),
+    };
+
+    // Find or start the template this shift repeats on.
+    var ti = anchor.templateId == null
+        ? -1
+        : _templates.indexWhere((t) => t.id == anchor.templateId);
+    String templateId;
+    if (ti < 0) {
+      final template = ShiftTemplate(
+        id: 'tpl${_nextTemplate++}',
+        detachmentId: anchor.detachmentId,
+        centerName: anchor.centerName,
+        dates: wanted,
+        startMinutes: anchor.startMinutes,
+        endMinutes: anchor.endMinutes,
+        needed: anchor.needed,
+      );
+      _templates.add(template);
+      ti = _templates.length - 1;
+      templateId = template.id;
+      _shifts[i] = anchor.copyWith(templateId: templateId);
+    } else {
+      templateId = _templates[ti].id;
+    }
+
+    final settled = _reconcileTemplateShifts(
       templateId: templateId,
-      date: day,
-      centerName: centerName.trim(),
-      startMinutes: startMinutes,
-      endMinutes: endMinutes,
-      needed: needed,
-      attendees: const [],
+      wanted: wanted,
+      detachmentId: anchor.detachmentId,
+      centerName: anchor.centerName,
+      startMinutes: anchor.startMinutes,
+      endMinutes: anchor.endMinutes,
+      needed: anchor.needed,
     );
-    _shifts.add(shift);
-    return Success(shift);
+
+    // The template mirrors the anchor's current spec so future siblings match
+    // it; existing siblings stay frozen. One lone day means the repeat is off.
+    _templates[ti] = _templates[ti].copyWith(
+      centerName: anchor.centerName,
+      startMinutes: anchor.startMinutes,
+      endMinutes: anchor.endMinutes,
+      needed: anchor.needed,
+      dates: settled,
+      active: settled.length > 1,
+    );
+    return Success(_templates[ti]);
+  }
+
+  @override
+  Future<Result<ShiftTemplate>> updateTemplateDates(
+    String templateId,
+    List<DateTime> dates,
+  ) async {
+    await _latency();
+    final ti = _templates.indexWhere((t) => t.id == templateId);
+    if (ti < 0) return const Failure('لم يُعثر على القالب.', code: 'not_found');
+    final template = _templates[ti];
+
+    final settled = _reconcileTemplateShifts(
+      templateId: templateId,
+      wanted: {for (final d in dates) dateOnly(d)},
+      detachmentId: template.detachmentId,
+      centerName: template.centerName,
+      startMinutes: template.startMinutes,
+      endMinutes: template.endMinutes,
+      needed: template.needed,
+    );
+
+    // Unlike `updateRepeat` there is no anchor shift to mirror: the user is
+    // editing the template itself, so its own spec is the truth and only the
+    // day set moves. A repeat that is down to one day (or none) stops being a
+    // repeat — the shifts it already made stay exactly where they are.
+    _templates[ti] = template.copyWith(
+      dates: settled,
+      active: settled.length > 1,
+    );
+    return Success(_templates[ti]);
+  }
+
+  /// Brings the shifts carrying [templateId] into line with [wanted], and
+  /// returns the day set that actually survived.
+  ///
+  /// Three rules, in this order, and they are the whole safety story of the
+  /// repeat feature:
+  ///
+  /// * a day in [wanted] with no shift for this template is **materialised**
+  ///   from the spec passed in — unless that day+time already carries some
+  ///   other shift, which is the dedupe guard;
+  /// * a shift of this template on a day not in [wanted] is **deleted only
+  ///   when it is empty**;
+  /// * a shift with attendees is **never** deleted; its day is folded back
+  ///   into the returned set instead, so the template can never claim a day
+  ///   set that contradicts the shifts on the ground.
+  Set<DateTime> _reconcileTemplateShifts({
+    required String templateId,
+    required Set<DateTime> wanted,
+    required String detachmentId,
+    required String centerName,
+    required int startMinutes,
+    required int endMinutes,
+    required int needed,
+  }) {
+    final settled = <DateTime>{...wanted};
+
+    final mine = _shifts.where((s) => s.templateId == templateId).toList();
+    for (final s in mine) {
+      if (settled.contains(s.date)) continue;
+      if (s.attendees.isNotEmpty) {
+        settled.add(s.date);
+        continue;
+      }
+      _shifts.removeWhere((x) => x.id == s.id);
+    }
+
+    final present = _shifts
+        .where((s) => s.templateId == templateId)
+        .map((s) => s.date)
+        .toSet();
+    for (final on in settled) {
+      if (present.contains(on)) continue;
+      if (_exists(detachmentId, on, startMinutes)) continue;
+      _shifts.add(Shift(
+        id: 'sh${_nextShift++}',
+        detachmentId: detachmentId,
+        templateId: templateId,
+        date: on,
+        centerName: centerName,
+        startMinutes: startMinutes,
+        endMinutes: endMinutes,
+        needed: needed,
+        attendees: const [],
+      ));
+    }
+    return settled;
+  }
+
+  @override
+  Future<Result<List<Shift>>> shiftsForTemplate(String templateId) async {
+    await _latency();
+    final list = _shifts.where((s) => s.templateId == templateId).toList()
+      ..sort(_order);
+    if (list.isEmpty) return const Success(<Shift>[]);
+    return Success(await _hydrateAll(list.first.detachmentId, list));
   }
 
   @override
@@ -331,7 +604,7 @@ class MockShiftRepository implements ShiftRepository {
 
     _shifts[i] = shift.copyWith(attendees: [
       ...shift.attendees,
-      member.copyWith(attendance: AttendanceState.notInvited),
+      member.copyWith(attendance: AttendanceState.notCheckedIn),
     ]);
     return Success(_hydrate(_shifts[i], roster));
   }
@@ -343,8 +616,7 @@ class MockShiftRepository implements ShiftRepository {
     final i = _indexOf(shiftId);
     if (i < 0) return const Failure('لم يُعثر على الشفت.', code: 'not_found');
     final shift = _shifts[i];
-    final attendees =
-        shift.attendees.where((a) => a.id != memberId).toList();
+    final attendees = shift.attendees.where((a) => a.id != memberId).toList();
     if (attendees.length == shift.attendees.length) {
       return const Failure('العضو غير مسند لهذا الشفت.', code: 'not_found');
     }
@@ -356,7 +628,147 @@ class MockShiftRepository implements ShiftRepository {
   @override
   Future<Result<Shift>> markAttendance(
       String shiftId, String memberId, AttendanceState state) async {
+    return switch (state) {
+      AttendanceState.absent => markAbsent(shiftId, memberId),
+      AttendanceState.notCheckedIn => resetAttendance(shiftId, memberId),
+      AttendanceState.checkedIn =>
+        recordCheckIn(shiftId, memberId, DateTime.now()),
+      AttendanceState.checkedOut =>
+        recordCheckOut(shiftId, memberId, DateTime.now()),
+    };
+  }
+
+  Future<Result<Shift>> _updateAttendance(
+    String shiftId,
+    String memberId,
+    TeamMember Function(Shift shift, TeamMember attendee) update,
+  ) async {
     await _latency();
+    final i = _indexOf(shiftId);
+    if (i < 0) return const Failure('لم يُعثر على الشفت.', code: 'not_found');
+    final shift = _shifts[i];
+
+    // The ordinary path only exists while the one-hour window is open — see
+    // `attendance_policy.dart`. Once it closes, `addAttendanceCorrection` is
+    // the only way attendance may change; that method never routes through
+    // here, so this check cannot be bypassed by the four public methods below.
+    if (!AttendanceWindow.of(shift, now: _clock()).isOpen) {
+      return const Failure(
+        S.attendanceWindowExpired,
+        code: attendanceWindowExpiredCode,
+      );
+    }
+
+    final at = shift.attendees.indexWhere((a) => a.id == memberId);
+    if (at < 0) {
+      return const Failure('العضو غير مسند لهذا الشفت.', code: 'not_found');
+    }
+    final attendees = [...shift.attendees];
+    try {
+      attendees[at] = update(shift, attendees[at]);
+    } on _AttendanceValidation catch (error) {
+      return Failure(
+        error.code == 'check_in_required'
+            ? S.checkoutRequiresCheckin
+            : S.checkoutBeforeCheckin,
+        code: error.code,
+      );
+    }
+    _shifts[i] = shift.copyWith(attendees: attendees);
+    final roster = await _roster(shift.detachmentId);
+    return Success(_hydrate(_shifts[i], roster));
+  }
+
+  @override
+  Future<Result<Shift>> recordCheckIn(
+    String shiftId,
+    String memberId,
+    DateTime at,
+  ) =>
+      _updateAttendance(
+        shiftId,
+        memberId,
+        (_, attendee) {
+          final checkOut = attendee.checkOutAt;
+          if (checkOut != null && at.isAfter(checkOut)) {
+            throw const _AttendanceValidation('checkin_after_checkout');
+          }
+          return attendee.copyWith(
+            attendance: checkOut == null
+                ? AttendanceState.checkedIn
+                : AttendanceState.checkedOut,
+            checkInAt: at,
+          );
+        },
+      );
+
+  @override
+  Future<Result<Shift>> recordCheckOut(
+    String shiftId,
+    String memberId,
+    DateTime at,
+  ) =>
+      _updateAttendance(shiftId, memberId, (shift, attendee) {
+        final checkIn = attendee.checkInAt;
+        if (checkIn == null) {
+          throw const _AttendanceValidation('check_in_required');
+        }
+        var normalized = at;
+        if (normalized.isBefore(checkIn) &&
+            shift.crossesMidnight &&
+            dateOnly(normalized) == shift.date) {
+          normalized = normalized.add(const Duration(days: 1));
+        }
+        if (normalized.isBefore(checkIn)) {
+          throw const _AttendanceValidation('checkout_before_checkin');
+        }
+        return attendee.copyWith(
+          attendance: AttendanceState.checkedOut,
+          checkOutAt: normalized,
+        );
+      });
+
+  @override
+  Future<Result<Shift>> markAbsent(String shiftId, String memberId) =>
+      _updateAttendance(
+        shiftId,
+        memberId,
+        (_, attendee) => attendee.copyWith(
+          attendance: AttendanceState.absent,
+          clearCheckIn: true,
+          clearCheckOut: true,
+        ),
+      );
+
+  @override
+  Future<Result<Shift>> resetAttendance(String shiftId, String memberId) =>
+      _updateAttendance(
+        shiftId,
+        memberId,
+        (_, attendee) => attendee.copyWith(
+          attendance: AttendanceState.notCheckedIn,
+          clearCheckIn: true,
+          clearCheckOut: true,
+        ),
+      );
+
+  @override
+  Future<Result<Shift>> addAttendanceCorrection({
+    required String shiftId,
+    required String memberId,
+    required AttendanceState status,
+    DateTime? checkInAt,
+    DateTime? checkOutAt,
+    required String reason,
+    required AttendanceCorrectionAuthor author,
+    required DateTime correctedAt,
+  }) async {
+    await _latency();
+    final normalizedReason = normalizeCorrectionReason(reason);
+    if (normalizedReason == null) {
+      return const Failure(S.correctionReasonRequired, code: 'validation');
+    }
+
     final i = _indexOf(shiftId);
     if (i < 0) return const Failure('لم يُعثر على الشفت.', code: 'not_found');
     final shift = _shifts[i];
@@ -365,9 +777,55 @@ class MockShiftRepository implements ShiftRepository {
     if (at < 0) {
       return const Failure('العضو غير مسند لهذا الشفت.', code: 'not_found');
     }
+    final attendee = shift.attendees[at];
+
+    // Same physical-consistency rule as the ordinary path (`recordCheckOut`),
+    // including the overnight normalization — a correction must not be able
+    // to store a state the ordinary path itself would refuse.
+    var normalizedCheckOut = checkOutAt;
+    if (checkInAt != null && normalizedCheckOut != null) {
+      if (normalizedCheckOut.isBefore(checkInAt) &&
+          shift.crossesMidnight &&
+          dateOnly(normalizedCheckOut) == shift.date) {
+        normalizedCheckOut = normalizedCheckOut.add(const Duration(days: 1));
+      }
+      if (normalizedCheckOut.isBefore(checkInAt)) {
+        return const Failure(S.checkoutBeforeCheckin,
+            code: 'checkout_before_checkin');
+      }
+    }
+
+    final correction = AttendanceCorrection(
+      id: 'corr${_nextCorrection++}',
+      shiftId: shiftId,
+      memberId: memberId,
+      before: AttendanceSnapshot.of(attendee),
+      after: AttendanceSnapshot(
+        status: status,
+        checkInAt: checkInAt,
+        checkOutAt: normalizedCheckOut,
+      ),
+      reason: normalizedReason,
+      author: author,
+      correctedAt: correctedAt,
+    );
+
     final attendees = [...shift.attendees];
-    attendees[at] = attendees[at].copyWith(attendance: state);
-    _shifts[i] = shift.copyWith(attendees: attendees);
+    attendees[at] = attendee.copyWith(
+      attendance: status,
+      checkInAt: checkInAt,
+      checkOutAt: normalizedCheckOut,
+      clearCheckIn: checkInAt == null,
+      clearCheckOut: normalizedCheckOut == null,
+    );
+
+    // The append and the effective-state update happen together, after every
+    // validation above has passed — a failed call above returns before this
+    // point and neither the attendee's state nor `corrections` is touched.
+    _shifts[i] = shift.copyWith(
+      attendees: attendees,
+      corrections: [...shift.corrections, correction],
+    );
     final roster = await _roster(shift.detachmentId);
     return Success(_hydrate(_shifts[i], roster));
   }
@@ -433,7 +891,7 @@ class MockShiftRepository implements ShiftRepository {
       if (_clashFor(m.id, _shifts[i]) != null) continue;
       _shifts[i] = _shifts[i].copyWith(attendees: [
         ..._shifts[i].attendees,
-        m.copyWith(attendance: AttendanceState.notInvited),
+        m.copyWith(attendance: AttendanceState.notCheckedIn),
       ]);
       added++;
     }
@@ -451,10 +909,10 @@ class MockShiftRepository implements ShiftRepository {
         .where((t) => t.detachmentId == detachmentId && t.active)
         .toList()
       ..sort((a, b) {
-        final byDay = ((a.weekday - weekStartsOn) % 7)
-            .compareTo((b.weekday - weekStartsOn) % 7);
-        return byDay != 0
-            ? byDay
+        final byFirst = (a.firstDate ?? DateTime(9999))
+            .compareTo(b.firstDate ?? DateTime(9999));
+        return byFirst != 0
+            ? byFirst
             : a.startMinutes.compareTo(b.startMinutes);
       });
     return Success(out);
@@ -499,55 +957,69 @@ class MockShiftRepository implements ShiftRepository {
         .toList()
       ..sort(_order);
 
+    return Success(_cloneOnto(
+      detachmentId: detachmentId,
+      source: source,
+      dayFor: (s) => to.add(Duration(days: s.date.difference(from).inDays)),
+    ));
+  }
+
+  @override
+  Future<Result<int>> copyDay({
+    required String detachmentId,
+    required DateTime fromDay,
+    required DateTime toDay,
+  }) async {
+    await _latency();
+    final from = dateOnly(fromDay);
+    final to = dateOnly(toDay);
+    if (from == to) {
+      return const Failure('لا يمكن نسخ اليوم على نفسه.', code: 'validation');
+    }
+
+    final source = _shifts
+        .where((s) => s.detachmentId == detachmentId && s.date == from)
+        .toList()
+      ..sort(_order);
+
+    return Success(_cloneOnto(
+      detachmentId: detachmentId,
+      source: source,
+      dayFor: (_) => to,
+    ));
+  }
+
+  /// Clones [source] onto the day each shift maps to, and answers how many
+  /// were actually added.
+  ///
+  /// Two rules the callers both need and neither should re-implement:
+  /// a day+time that already has a shift is skipped, so copying twice is
+  /// harmless; and assignments are dropped, because the schedule repeats but
+  /// the people on it do not — copying names forward is how a lead ends up
+  /// publishing a roster nobody agreed to.
+  int _cloneOnto({
+    required String detachmentId,
+    required List<Shift> source,
+    required DateTime Function(Shift) dayFor,
+  }) {
     var added = 0;
     for (final s in source) {
-      final day = to.add(Duration(days: s.date.difference(from).inDays));
+      final day = dayFor(s);
       if (_exists(detachmentId, day, s.startMinutes)) continue;
       _shifts.add(Shift(
         id: 'sh${_nextShift++}',
         detachmentId: detachmentId,
-        templateId: s.templateId,
+        // A copied shift is independent: it does not join the source shift's
+        // template, whose date set does not know about this day.
         date: day,
         centerName: s.centerName,
         startMinutes: s.startMinutes,
         endMinutes: s.endMinutes,
         needed: s.needed,
-        // The schedule repeats; the people on it do not. Copying assignments
-        // forward is how a lead ends up publishing a week nobody agreed to.
         attendees: const [],
       ));
       added++;
     }
-    return Success(added);
-  }
-
-  @override
-  Future<Result<int>> applyTemplates({
-    required String detachmentId,
-    required DateTime weekStart,
-  }) async {
-    await _latency();
-    final start = startOfWeek(weekStart);
-    final active =
-        _templates.where((t) => t.detachmentId == detachmentId && t.active);
-
-    var added = 0;
-    for (final t in active) {
-      final day = _dayOfWeek(start, t.weekday);
-      if (_exists(detachmentId, day, t.startMinutes)) continue;
-      _shifts.add(Shift(
-        id: 'sh${_nextShift++}',
-        detachmentId: detachmentId,
-        templateId: t.id,
-        date: day,
-        centerName: t.centerName,
-        startMinutes: t.startMinutes,
-        endMinutes: t.endMinutes,
-        needed: t.needed,
-        attendees: const [],
-      ));
-      added++;
-    }
-    return Success(added);
+    return added;
   }
 }

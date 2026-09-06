@@ -190,8 +190,8 @@ class _WorkshopEditPageState extends ConsumerState<WorkshopEditPage> {
   Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     if (_at == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(S.workshopInvalidDate)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text(S.workshopInvalidDate)));
       return;
     }
     setState(() => _saving = true);

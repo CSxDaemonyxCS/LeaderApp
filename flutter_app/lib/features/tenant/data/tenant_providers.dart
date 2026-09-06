@@ -13,9 +13,8 @@ final tenantRepositoryProvider = Provider<TenantRepository>((ref) {
 });
 
 /// The tenant list, optionally filtered by a search string.
-final tenantListProvider =
-    FutureProvider.autoDispose.family<Result<List<Tenant>>, String>(
-        (ref, query) async {
+final tenantListProvider = FutureProvider.autoDispose
+    .family<Result<List<Tenant>>, String>((ref, query) async {
   return ref.read(tenantRepositoryProvider).list(query: query);
 });
 
