@@ -30,7 +30,7 @@ void main() {
     ];
     final document = ReportDocument(
       detachmentName: 'مفرزة دمشق المركزية — Damascus Central Detachment',
-      tenantName: 'Medical Team',
+      detachmentGroupName: 'Medical Team',
       generatedAt: DateTime(2026, 9, 2, 12, 30),
       range: ReportRange.quarter,
       blocks: [

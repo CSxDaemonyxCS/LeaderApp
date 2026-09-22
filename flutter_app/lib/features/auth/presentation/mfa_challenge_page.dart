@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/problem/problem.dart';
+import '../../../core/problem/problem_presentation.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../l10n/strings.dart';
@@ -45,6 +47,10 @@ class _MfaChallengePageState extends ConsumerState<MfaChallengePage> {
   String get _code => _controllers.map((c) => c.text).join();
 
   Future<void> _submit() async {
+    // The last digit typed submits automatically, so a correction made while
+    // the first request is still in flight would fire a second verify. The
+    // disabled button alone does not cover that path.
+    if (_busy) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -56,10 +62,20 @@ class _MfaChallengePageState extends ConsumerState<MfaChallengePage> {
         setState(() => _busy = false);
         context.go('/home');
       },
-      failure: (m, _) {
+      failure: (m, code) {
+        final parsed = ProblemCode.parse(code);
         setState(() {
           _busy = false;
-          _error = m;
+          // Never the server's own text. A rejected code is a `validation`
+          // in the contract's vocabulary, and the useful thing to say about
+          // it is that the code was wrong — not the generic field message.
+          // Everything else gets the app's resolved copy for that code.
+          _error = switch (parsed) {
+            null || ProblemCode.validation => S.mfaCodeRejected,
+            _ => resolveProblem(
+                Problem.of(parsed, rawCode: code, detail: m),
+              ).message,
+          };
         });
       },
       offline: (_) => setState(() {

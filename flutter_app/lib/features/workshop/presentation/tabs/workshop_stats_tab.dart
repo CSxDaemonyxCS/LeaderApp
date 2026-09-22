@@ -3,12 +3,14 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/format/app_number.dart';
 import '../../../../core/motion/animated_counter.dart';
 import '../../../../core/motion/motion_tokens.dart';
 import '../../../../core/theme/app_palette.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/async_result.dart';
+import '../../../../core/widgets/app_meta.dart';
 import '../../../../core/widgets/offline_banner.dart';
 import '../../../../core/widgets/refresh_indicator.dart';
 import '../../../../l10n/strings.dart';
@@ -183,18 +185,18 @@ class _DonutMetric extends StatelessWidget {
       ),
       const SizedBox(height: 2),
       Text(
-        '${toArabicIndic('${group.present}')} / '
-        '${toArabicIndic('${group.absent}')} ${S.statsPresentAbsent}',
+        '${AppNumber.ratio(group.present, group.absent)} '
+        '${S.statsPresentAbsent}',
         textAlign: TextAlign.center,
         style: TextStyle(color: c.ink3, fontSize: 12),
       ),
       const SizedBox(height: 2),
-      Text(
-        '${toArabicIndic('${group.paid}')} ${S.paymentPaid} · '
-        '${toArabicIndic('${group.unpaid}')} ${S.paymentUnpaid} · '
-        '${toArabicIndic('${group.unspecified}')} ${S.paymentUnspecified}',
-        textAlign: TextAlign.center,
-        style: TextStyle(color: c.ink3, fontSize: 11, height: 1.4),
+      AppMeta(
+        parts: [
+          AppMetaText.count(group.paid, label: S.paymentPaid),
+          AppMetaText.count(group.unpaid, label: S.paymentUnpaid),
+          AppMetaText.count(group.unspecified, label: S.paymentUnspecified),
+        ],
       ),
     ]);
   }
@@ -235,7 +237,7 @@ class _Donut extends StatelessWidget {
         ),
         child: Center(
           child: TabularDigits(
-            '${toArabicIndic('$percent')}${S.percentSign}',
+            AppNumber.percent(percent),
             style: AppTypography.number(c, size: 20),
           ),
         ),
@@ -446,17 +448,13 @@ class _DetailSection extends StatelessWidget {
               style: TextStyle(color: c.ink3, fontSize: 12),
             ),
           ),
-          Directionality(
-            textDirection: TextDirection.ltr,
-            child: Text(
-              '${toArabicIndic('${stats.registeredCount}')}'
-              ' / ${toArabicIndic('${stats.capacity}')}',
-              style: AppTypography.digits(c.ink, size: 14),
-            ),
+          Text(
+            AppNumber.ratio(stats.registeredCount, stats.capacity),
+            style: AppTypography.digits(c.ink, size: 14),
           ),
           const SizedBox(width: AppSpacing.sm),
           Text(
-            '${toArabicIndic('${stats.capacityPercent}')}${S.percentSign}',
+            AppNumber.percent(stats.capacityPercent),
             style: AppTypography.digits(c.ink3, size: 13),
           ),
         ]),
@@ -537,12 +535,7 @@ class _SectionCard extends StatelessWidget {
         children: [
           Text(
             title,
-            style: TextStyle(
-              color: c.ink3,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.6,
-            ),
+            style: AppTypography.eyebrow(c),
           ),
           const SizedBox(height: AppSpacing.md),
           child,

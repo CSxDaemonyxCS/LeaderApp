@@ -1,4 +1,5 @@
 import '../../../core/format/app_date.dart';
+import '../../../core/format/app_time.dart';
 import '../../../core/motion/animated_counter.dart';
 import '../../../l10n/strings.dart';
 import '../../conflict/domain/conflict_models.dart';
@@ -49,9 +50,9 @@ ConflictPresentation presentShiftConflict({
     fieldId: 'date',
     label: S.conflictShiftDate,
     localValue:
-        '${AppDate.weekdayOf(local.date)} · ${AppDate.dayMonth(local.date)}',
+        AppTime.weekdayDay(local.date),
     currentValue:
-        '${AppDate.weekdayOf(current.date)} · ${AppDate.dayMonth(current.date)}',
+        AppTime.weekdayDay(current.date),
   );
   add(
     changed: local.startMinutes != current.startMinutes ||
@@ -82,7 +83,7 @@ ConflictPresentation presentShiftConflict({
     entityId: local.id,
     recordTitle: '${S.conflictShiftRecord} · ${local.centerName}',
     recordSubtitle:
-        '${AppDate.weekdayOf(local.date)} · ${AppDate.dayMonth(local.date)}',
+        AppTime.weekdayDay(local.date),
     baseVersion: baseVersion,
     currentVersion: currentVersion,
     differences: differences,

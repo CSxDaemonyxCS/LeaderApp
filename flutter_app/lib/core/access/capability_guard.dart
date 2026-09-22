@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/auth/data/auth_providers.dart';
+import 'admin_experience.dart';
 import 'capability.dart';
 
 /// The Flutter/Riverpod side of the access layer. `capability.dart` and
@@ -22,6 +23,20 @@ import 'capability.dart';
 final capabilitiesProvider = Provider<Capabilities>((ref) {
   return ref.watch(currentUserProvider).valueOrNull?.capabilities ??
       Capabilities.none;
+});
+
+/// How much of the app this session is shown — the one place breadth is
+/// decided, so no widget carries an `if (isMainAdmin)` of its own.
+///
+/// Derived from [capabilitiesProvider], which means a grant that changes
+/// mid-session re-shapes the UI on the next build, and a session still
+/// loading resolves to [AdminView.none] — deny everything, and the *scoped*
+/// experience, never the broad one.
+///
+/// **Presentation only.** Nothing here is a check; see the contract at the
+/// top of `admin_experience.dart`.
+final adminViewProvider = Provider<AdminView>((ref) {
+  return AdminView.of(ref.watch(capabilitiesProvider));
 });
 
 /// How a [CapabilityGate] renders a capability the session does not hold.
@@ -165,6 +180,17 @@ String? requireCapability(
 }) {
   // TODO(security): a client-side redirect. The backend must reject the
   // request too — a modified client simply does not run this.
+  //
+  // While the session is still unknown this decides nothing, for the same
+  // reason the auth gate does not: the session read is async, so every cold
+  // start and every offline relaunch passes through that state, and bouncing
+  // a legitimate deep link to `/home` because the grant had not landed yet
+  // would break the app for exactly the conditions it is built for. Nothing
+  // gated renders in the meantime — `capabilitiesProvider` is
+  // `Capabilities.none` throughout — and the router's `refreshListenable`
+  // re-runs every redirect the moment the gate resolves, so a link that
+  // should be refused is refused a frame later rather than never.
+  if (ref.read(authGateProvider).isUnresolved) return null;
   final caps = ref.read(capabilitiesProvider);
   return caps.canAnyIn(detachmentId, anyOf) ? null : fallback;
 }

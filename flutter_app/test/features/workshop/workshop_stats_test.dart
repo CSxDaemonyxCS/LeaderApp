@@ -5,6 +5,7 @@ import 'package:mtm/core/motion/motion_level.dart';
 import 'package:mtm/core/result/result.dart';
 import 'package:mtm/core/theme/app_palette.dart';
 import 'package:mtm/core/theme/app_theme.dart';
+import 'package:mtm/core/time/clock.dart';
 import 'package:mtm/features/detachment/domain/report_models.dart';
 import 'package:mtm/features/team/domain/team_models.dart';
 import 'package:mtm/features/workshop/data/workshop_providers.dart';
@@ -190,39 +191,54 @@ void main() {
         );
 
     test('carries the workshop in the header, not a date window', () {
-      final doc = buildWorkshopStatsReport(sample());
+      final doc = buildWorkshopStatsReport(
+        sample(),
+        generatedAt: DateTime.utc(2026, 9, 21),
+      );
       expect(doc.detachmentName, 'ورشة الاختبار');
-      expect(doc.tenantName, 'قاعة الاختبار');
+      expect(doc.detachmentGroupName, 'قاعة الاختبار');
       // The document model needs a range; the header must not print one.
       expect(doc.scopeLabel, isNot(ReportRange.week.label));
       expect(doc.scopeLabel, contains(S.workshopStatsTitle));
     });
 
     test('every section is included by default and each is selectable', () {
-      final all = buildWorkshopStatsReport(sample());
+      final all = buildWorkshopStatsReport(
+        sample(),
+        generatedAt: DateTime.utc(2026, 9, 21),
+      );
       expect(all.blocks, hasLength(4)); // summary table + finance facts + 2
 
       final summaryOnly = buildWorkshopStatsReport(
         sample(),
         sections: const {WorkshopReportSection.summary},
+        generatedAt: DateTime.utc(2026, 9, 21),
       );
       expect(summaryOnly.blocks, hasLength(2));
 
       final teamOnly = buildWorkshopStatsReport(
         sample(),
         sections: const {WorkshopReportSection.team},
+        generatedAt: DateTime.utc(2026, 9, 21),
       );
       expect(teamOnly.blocks, hasLength(1));
       expect(teamOnly.blocks.single.title, contains(S.statsSecTeam));
     });
 
     test('nothing selected produces an empty document, not a blank file', () {
-      final none = buildWorkshopStatsReport(sample(), sections: const {});
+      final none = buildWorkshopStatsReport(
+        sample(),
+        sections: const {},
+        generatedAt: DateTime.utc(2026, 9, 21),
+      );
       expect(none.isEmpty, isTrue);
     });
 
     test('the CSV carries the same rows the PDF would lay out', () {
-      final doc = buildWorkshopStatsReport(sample());
+      final doc = buildWorkshopStatsReport(
+        sample(),
+        generatedAt: DateTime.utc(2026, 9, 21),
+      );
       final csv = doc.toCsv();
       expect(csv, contains('ورشة الاختبار'));
       expect(csv, contains(S.statsGroupParticipants));
@@ -236,6 +252,7 @@ void main() {
       final doc = buildWorkshopStatsReport(
         sample(),
         sections: const {WorkshopReportSection.participants},
+        generatedAt: DateTime.utc(2026, 9, 21),
       );
       final table = doc.blocks.single as ReportTable;
       expect(table.data.first.first, '١');
@@ -357,6 +374,18 @@ void main() {
   });
 
   group('the seeded data reaches the statistics', () {
+    test('the seeded schedule is derived from the injected clock', () async {
+      final fixed = DateTime.utc(2031, 2, 3, 7, 30);
+      final container = ProviderContainer(
+        overrides: [clockProvider.overrideWithValue(() => fixed)],
+      );
+      addTearDown(container.dispose);
+
+      final all = _ok(await container.read(workshopListProvider.future));
+      final first = all.singleWhere((workshop) => workshop.id == 'w1');
+      expect(first.at, fixed.add(const Duration(days: 4, hours: 3)));
+    });
+
     test('every payment state appears somewhere in the seed', () async {
       final container = ProviderContainer();
       addTearDown(container.dispose);

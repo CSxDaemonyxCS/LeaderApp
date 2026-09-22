@@ -27,6 +27,8 @@ const _testUser = AuthUser(
   id: _authorId,
   name: 'سامر المشرف',
   email: 'x@example.com',
+  role: AuthRole.mainAdmin,
+  saasTenantId: 'saas_test',
   capabilities: Capabilities.none,
   orgName: 'org',
 );

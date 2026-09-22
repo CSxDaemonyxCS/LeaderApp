@@ -7,6 +7,8 @@ import 'package:mtm/core/result/result.dart';
 import 'package:mtm/core/theme/app_palette.dart';
 import 'package:mtm/core/theme/app_theme.dart';
 import 'package:mtm/core/widgets/offline_banner.dart';
+import 'package:mtm/features/detachment/data/detachment_providers.dart';
+import 'package:mtm/features/detachment/domain/detachment_models.dart';
 import 'package:mtm/features/detachment/presentation/tabs/detachment_team_tab.dart';
 import 'package:mtm/features/team/data/team_providers.dart';
 import 'package:mtm/features/team/domain/team_models.dart';
@@ -22,6 +24,24 @@ import 'package:mtm/l10n/strings.dart';
 /// duplicated here.
 
 const _det = 'd1';
+
+/// The detachment the roster belongs to.
+///
+/// Stubbed like the roster is. Since Point 13 the tab's controls resolve
+/// through `DetachmentAccess`, which asks the detachment whether it is still
+/// running — so the states below have to say which detachment this is rather
+/// than leaving the real repository to answer for an id it has never heard of.
+const _detachment = Detachment(
+  id: _det,
+  detachmentGroupId: 't1',
+  name: 'مفرزة الاختبار',
+  region: 'دمشق',
+  mainCenter: 'مركز الاختبار',
+  memberCount: 3,
+  weeklyShiftCount: 0,
+  coveragePercent: 0,
+  status: DetachmentStatus.active,
+);
 
 TeamMember _member(
   String id,
@@ -76,6 +96,9 @@ Future<void> _pump(
         capabilitiesProvider.overrideWithValue(capabilities),
         teamRepositoryProvider.overrideWithValue(
           _StubTeamRepository(roster ?? Success(_roster)),
+        ),
+        detachmentByIdProvider(_det).overrideWith(
+          (ref) async => const Success<Detachment>(_detachment),
         ),
       ],
       child: MaterialApp(

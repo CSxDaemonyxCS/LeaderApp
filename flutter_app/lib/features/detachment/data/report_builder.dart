@@ -1,8 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/format/app_date.dart';
+import '../../../core/format/app_number.dart';
 import '../../../core/motion/animated_counter.dart';
 import '../../../core/result/result.dart';
+import '../../../core/time/clock.dart';
 import '../../../l10n/strings.dart';
 import '../../inventory/data/inventory_providers.dart';
 import '../../inventory/domain/inventory_format.dart';
@@ -11,8 +13,8 @@ import '../../shift/data/shift_providers.dart';
 import '../../shift/domain/shift_models.dart';
 import '../../team/data/team_providers.dart';
 import '../../team/domain/team_models.dart';
-import '../../tenant/data/tenant_providers.dart';
-import '../../tenant/domain/tenant_models.dart';
+import '../../detachment_group/data/detachment_group_providers.dart';
+import '../../detachment_group/domain/detachment_group_models.dart';
 import '../domain/detachment_models.dart';
 import '../domain/report_models.dart';
 import 'detachment_providers.dart';
@@ -44,6 +46,7 @@ final reportProvider = FutureProvider.autoDispose
     .family<Result<ReportDocument>, ReportQuery>((ref, q) async {
   final id = q.detachmentId;
   final spec = q.spec;
+  final now = ref.watch(clockProvider)();
 
   final detachmentResult =
       await ref.read(detachmentRepositoryProvider).byId(id);
@@ -52,9 +55,10 @@ final reportProvider = FutureProvider.autoDispose
     return const Failure('لم يُعثر على المفرزة.', code: 'not_found');
   }
 
-  final tenantResult =
-      await ref.read(tenantRepositoryProvider).byId(detachment.tenantId);
-  final tenantName = _dataOf<Tenant>(tenantResult)?.name ?? '';
+  final groupResult = await ref
+      .read(detachmentGroupRepositoryProvider)
+      .byId(detachment.detachmentGroupId);
+  final detachmentGroupName = _dataOf<DetachmentGroup>(groupResult)?.name ?? '';
 
   final blocks = <ReportBlock>[];
 
@@ -62,11 +66,11 @@ final reportProvider = FutureProvider.autoDispose
   if (spec.has(ReportSection.summary)) {
     blocks.add(ReportFacts(S.secSummary, [
       (S.detachmentName, detachment.name),
-      (S.tenant, tenantName),
+      (S.detachmentGroup, detachmentGroupName),
       (S.detachmentRegion, detachment.region),
       (S.detachmentCenter, detachment.mainCenter),
       (S.memberCount, toArabicIndic('${detachment.memberCount}')),
-      (S.coverage, '${toArabicIndic('${detachment.coveragePercent}')}٪'),
+      (S.coverage, AppNumber.percent(detachment.coveragePercent)),
       (
         S.status,
         detachment.status == DetachmentStatus.active
@@ -187,8 +191,8 @@ final reportProvider = FutureProvider.autoDispose
 
   // ---- Attendance --------------------------------------------------------
   if (spec.has(ReportSection.attendance)) {
-    final today = dateOnly(DateTime.now());
-    final from = today.subtract(Duration(days: spec.range.days - 1));
+    final today = dateOnly(now);
+    final from = addDays(today, -(spec.range.days - 1));
     final shifts = _dataOf<List<Shift>>(
           await ref.read(shiftRepositoryProvider).listForRange(id, from, today),
         ) ??
@@ -199,10 +203,7 @@ final reportProvider = FutureProvider.autoDispose
       (S.absentTotal, toArabicIndic('${attendance.absentCount}')),
       (S.completedTotal, toArabicIndic('${attendance.completedCount}')),
       (S.pendingTotal, toArabicIndic('${attendance.pendingCount}')),
-      (
-        S.attendancePercent,
-        '${toArabicIndic('${attendance.attendancePercent}')}٪'
-      ),
+      (S.attendancePercent, AppNumber.percent(attendance.attendancePercent)),
     ]));
 
     // The legacy report's first table was one row per **active roster
@@ -286,7 +287,7 @@ final reportProvider = FutureProvider.autoDispose
     final labels = <String>[];
     final values = <int>[];
     for (var offset = 0; offset < spec.range.days; offset++) {
-      final day = from.add(Duration(days: offset));
+      final day = addDays(from, offset);
       final reviewed = attendance.records
           .where((record) =>
               dateOnly(record.shiftDate) == day &&
@@ -302,7 +303,7 @@ final reportProvider = FutureProvider.autoDispose
         S.attendancePercent,
         labels,
         values,
-        suffix: '٪',
+        suffix: S.percentSign,
       ));
     }
   }
@@ -320,7 +321,7 @@ final reportProvider = FutureProvider.autoDispose
       final labels = _dayLabels(stats.attendanceSeries.length);
       if (spec.has(ReportSection.coverage)) {
         blocks.add(ReportSeries(S.secCoverage, labels, stats.coverageSeries,
-            suffix: '٪'));
+            suffix: S.percentSign));
       }
       if (spec.has(ReportSection.consumption)) {
         blocks.add(ReportSeries(S.secConsumption, labels, stats.stockSeries));
@@ -330,8 +331,8 @@ final reportProvider = FutureProvider.autoDispose
 
   return Success(ReportDocument(
     detachmentName: detachment.name,
-    tenantName: tenantName,
-    generatedAt: DateTime.now(),
+    detachmentGroupName: detachmentGroupName,
+    generatedAt: now,
     range: spec.range,
     blocks: blocks,
   ));
@@ -341,8 +342,7 @@ final reportProvider = FutureProvider.autoDispose
 List<String> _dayLabels(int count) {
   final today = dateOnly(DateTime.now());
   return [
-    for (int i = count - 1; i >= 0; i--)
-      AppDate.dayMonth(today.subtract(Duration(days: i))),
+    for (int i = count - 1; i >= 0; i--) AppDate.dayMonth(addDays(today, -i)),
   ];
 }
 

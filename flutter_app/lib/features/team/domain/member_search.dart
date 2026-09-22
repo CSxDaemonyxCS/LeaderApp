@@ -1,3 +1,4 @@
+import '../../../core/text/search_key.dart';
 import 'team_models.dart';
 
 /// Client-side roster search and filtering.
@@ -12,51 +13,14 @@ import 'team_models.dart';
 /// two genuinely different records collide. Search is a lookup aid, so it
 /// folds the forms a user is likely to type past.
 
-/// Arabic letters whose written form varies while the name stays the same.
-const Map<String, String> _arabicFolds = {
-  'أ': 'ا',
-  'إ': 'ا',
-  'آ': 'ا',
-  'ٱ': 'ا',
-  'ى': 'ي',
-  'ئ': 'ي',
-  'ؤ': 'و',
-  'ة': 'ه',
-};
-
-/// Harakat, tanwin, shadda, sukun and the tatweel stretch character — all
-/// decoration over the same consonants.
-final RegExp _arabicMarks = RegExp(r'[ـً-ْٰٓ-ٕ]');
-
-/// Arabic-Indic digits, so a member's number can be typed either way.
-const Map<String, String> _digitFolds = {
-  '٠': '0',
-  '١': '1',
-  '٢': '2',
-  '٣': '3',
-  '٤': '4',
-  '٥': '5',
-  '٦': '6',
-  '٧': '7',
-  '٨': '8',
-  '٩': '9',
-};
-
 /// The comparison form used by [filterMembers] on both sides of a match.
 ///
-/// Whitespace-collapsed, lower-cased, stripped of Arabic diacritics and
-/// tatweel, with alef/ya/waw/ta-marbuta variants folded together and
-/// Arabic-Indic digits mapped to ASCII. "احمد" finds "أحمد", and "١٠٧" finds
-/// "107".
-String memberSearchKey(String value) {
-  final buffer = StringBuffer();
-  for (final rune in normalizeMemberName(value).toLowerCase().runes) {
-    final char = String.fromCharCode(rune);
-    if (_arabicMarks.hasMatch(char)) continue;
-    buffer.write(_arabicFolds[char] ?? _digitFolds[char] ?? char);
-  }
-  return buffer.toString();
-}
+/// Delegates to the app-wide [searchKey] in `core/text/search_key.dart`. The
+/// normalization used to live here; it moved down when the platform
+/// subscriber list needed the same behaviour, and this name is kept because
+/// the roster is where it is read from and because a second spelling of the
+/// rule is the thing worth avoiding.
+String memberSearchKey(String value) => searchKey(value);
 
 /// The roster narrowed by a free-text query and the chosen facets.
 ///

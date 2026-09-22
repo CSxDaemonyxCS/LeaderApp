@@ -1,3 +1,4 @@
+import '../../../../core/widgets/filter_chips.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -5,8 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/access/capability.dart';
-import '../../../../core/access/capability_guard.dart';
-import '../../../../core/format/app_date.dart';
+import '../../../../core/format/app_time.dart';
 import '../../../../core/motion/animated_counter.dart';
 import '../../../../core/motion/press_scale.dart';
 import '../../../../core/motion/stagger.dart';
@@ -16,6 +16,7 @@ import '../../../../core/theme/app_palette.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/async_result.dart';
+import '../../../../core/widgets/app_meta.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/refresh_indicator.dart';
 import '../../../../core/widgets/sheet_scaffold.dart';
@@ -26,6 +27,7 @@ import '../../../inventory/data/inventory_providers.dart';
 import '../../../inventory/domain/inventory_format.dart';
 import '../../../inventory/domain/inventory_models.dart';
 import '../../../shell/main_shell.dart';
+import '../../data/detachment_providers.dart';
 
 /// Stock held by one detachment.
 ///
@@ -50,6 +52,7 @@ String _packagingUnitLabel(PackagingUnit unit) => switch (unit) {
     };
 
 class _StorageTabState extends ConsumerState<DetachmentStorageTab> {
+  final _search = TextEditingController();
   _StockFilter _filter = _StockFilter.all;
   String _query = '';
 
@@ -59,6 +62,12 @@ class _StorageTabState extends ConsumerState<DetachmentStorageTab> {
   /// card's amber expiry text uses the same number, so the filter and the
   /// warning colour can never disagree.
   static const int _expiringWithinDays = 30;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   List<InventoryItem> _apply(List<InventoryItem> items) {
     Iterable<InventoryItem> out = items;
@@ -79,11 +88,14 @@ class _StorageTabState extends ConsumerState<DetachmentStorageTab> {
 
   @override
   Widget build(BuildContext context) {
-    final canAdjust = ref.capabilities.canIn(detachmentId, Cap.inventoryAdjust);
-    final onAdd = ref.whenCan(
+    // A finished detachment's store is a record of what it held, so both
+    // keys resolve through `DetachmentAccess`: the movement history stays
+    // readable and nothing on the screen can add to it.
+    final access = ref.accessIn(detachmentId);
+    final canAdjust = access.can(Cap.inventoryAdjust);
+    final onAdd = access.when(
       Cap.inventoryItemManage,
       () => context.push('/detachment/$detachmentId/storage/new'),
-      detachmentId: detachmentId,
     );
 
     return AppRefreshIndicator(
@@ -93,10 +105,18 @@ class _StorageTabState extends ConsumerState<DetachmentStorageTab> {
         onRetry: () => ref.invalidate(inventoryListProvider),
         builder: (context, all, stale) {
           if (all.isEmpty) {
+            // "أضف صنفا لتبدأ" is an instruction, and there is nothing to
+            // start on a detachment that has ended — so history says what it
+            // actually knows instead.
             return EmptyState(
+              key: const Key('inventory-empty'),
               icon: Icons.inventory_2_outlined,
-              title: S.emptyInventory,
-              body: S.emptyInventorySub,
+              title: access.isHistorical
+                  ? S.historicalEmptyInventory
+                  : S.emptyInventory,
+              body: access.isHistorical
+                  ? S.historicalEmptyInventorySub
+                  : S.emptyInventorySub,
               actionLabel: onAdd == null ? null : S.addItem,
               onAction: onAdd,
             );
@@ -108,43 +128,56 @@ class _StorageTabState extends ConsumerState<DetachmentStorageTab> {
                   AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.lg),
               children: [
                 TextField(
+                  key: const Key('inventory-search'),
+                  controller: _search,
                   onChanged: (v) => setState(() => _query = v),
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search_rounded),
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.search_rounded),
                     hintText: S.searchItems,
+                    suffixIcon: _search.text.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: S.membersClearSearch,
+                            icon: const Icon(Icons.close_rounded, size: 18),
+                            onPressed: () {
+                              _search.clear();
+                              setState(() => _query = '');
+                            },
+                          ),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 // The add action keeps its place at the end of the row; the
-                // three filters scroll under it, so a longer filter label
-                // never pushes the one control that creates something off
-                // the screen.
+                // three filters wrap under it, so a longer filter label at a
+                // large text scale never pushes the one control that creates
+                // something off the screen — and no filter is ever clipped
+                // out of reach, which is what the horizontal scroll this
+                // replaced did at 320 dp.
                 Row(children: [
                   Expanded(
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(children: [
-                        _Chip(
+                    child: AppFilterBar(
+                      semanticLabel: S.filterByStatus,
+                      children: [
+                        AppFilterChip(
                           label: S.filterAll,
-                          active: _filter == _StockFilter.all,
-                          onTap: () =>
+                          selected: _filter == _StockFilter.all,
+                          onSelected: (_) =>
                               setState(() => _filter = _StockFilter.all),
                         ),
-                        const SizedBox(width: 8),
-                        _Chip(
+                        AppFilterChip(
                           label: S.filterLow,
-                          active: _filter == _StockFilter.low,
-                          onTap: () =>
+                          selected: _filter == _StockFilter.low,
+                          onSelected: (_) =>
                               setState(() => _filter = _StockFilter.low),
                         ),
-                        const SizedBox(width: 8),
-                        _Chip(
+                        AppFilterChip(
                           label: S.filterExpiring,
-                          active: _filter == _StockFilter.expiring,
-                          onTap: () =>
+                          selected: _filter == _StockFilter.expiring,
+                          onSelected: (_) =>
                               setState(() => _filter = _StockFilter.expiring),
                         ),
-                      ]),
+                      ],
                     ),
                   ),
                   if (onAdd != null) ...[
@@ -154,14 +187,17 @@ class _StorageTabState extends ConsumerState<DetachmentStorageTab> {
                 ]),
                 const SizedBox(height: AppSpacing.md),
                 if (items.isEmpty)
-                  Padding(
-                    padding:
-                        const EdgeInsets.symmetric(vertical: AppSpacing.xxl),
-                    child: Text(
-                      S.noData,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: context.c.ink3, fontSize: 13),
-                    ),
+                  EmptyState(
+                    key: const Key('inventory-no-results'),
+                    icon: Icons.search_off_rounded,
+                    title: S.noMatchingInventory,
+                    body: S.noMatchingInventorySub,
+                    actionLabel: S.clearInventoryFilters,
+                    onAction: () => setState(() {
+                      _query = '';
+                      _search.clear();
+                      _filter = _StockFilter.all;
+                    }),
                   )
                 else
                   for (int i = 0; i < items.length; i++) ...[
@@ -184,8 +220,29 @@ class _StorageTabState extends ConsumerState<DetachmentStorageTab> {
   }
 
   Future<void> _itemSheet(BuildContext context, WidgetRef ref,
-      InventoryItem item, bool canAdjust) async {
-    await showAppSheet<void>(
+          InventoryItem item, bool canAdjust) =>
+      showInventoryItemSheet(
+        context: context,
+        detachmentId: detachmentId,
+        item: item,
+        canAdjust: canAdjust,
+      );
+}
+
+/// Everything you can do to **one** stock item, opened by tapping its card.
+///
+/// Public because the storage tab is no longer the only way in: Global Search
+/// opens the same sheet for an item result rather than growing a second stock
+/// screen of its own. The body is unchanged — it invalidates the inventory
+/// providers on a write and pushes the item form through the router, so it
+/// behaves identically whichever surface opened it.
+Future<void> showInventoryItemSheet({
+  required BuildContext context,
+  required String detachmentId,
+  required InventoryItem item,
+  required bool canAdjust,
+}) =>
+    showAppSheet<void>(
       context: context,
       title: item.name,
       child: _ItemSheetBody(
@@ -194,8 +251,6 @@ class _StorageTabState extends ConsumerState<DetachmentStorageTab> {
         canAdjust: canAdjust,
       ),
     );
-  }
-}
 
 StatusKind _kindFor(StockLevel level) => switch (level) {
       StockLevel.ok => StatusKind.ok,
@@ -247,32 +302,20 @@ class _ItemCard extends StatelessWidget {
             // and an expiry phrase. They wrap rather than compete for one
             // line, so a long unit ("أسطوانة") cannot clip the expiry
             // warning beside it.
-            Wrap(
-              spacing: AppSpacing.md,
-              runSpacing: AppSpacing.xs,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Text(
-                  stockBreakdownLabel(item),
-                  style: AppTypography.digits(c.ink, size: 16),
-                ),
-                Text(
-                  '${S.minimumLevel} ${toArabicIndic(item.minimum.toString())}',
-                  style: TextStyle(color: c.ink3, fontSize: 12),
-                ),
-                Text(
+            AppMeta(
+              parts: [
+                AppMetaText(stockBreakdownLabel(item), emphasis: true),
+                AppMetaText.total(S.minimumLevel, item.minimum),
+                AppMetaText(
                   item.expiresOn == null
                       ? S.noExpiry
                       : days != null && days < 0
                           ? S.expired
                           : '${toArabicIndic('${days ?? 0}')} ${S.daysToExpiry}',
-                  style: TextStyle(
-                    color: days != null &&
-                            days <= _StorageTabState._expiringWithinDays
-                        ? c.warn
-                        : c.ink3,
-                    fontSize: 12,
-                  ),
+                  color: days != null &&
+                          days <= _StorageTabState._expiringWithinDays
+                      ? c.warn
+                      : null,
                 ),
               ],
             ),
@@ -332,7 +375,7 @@ class _ItemSheetBodyState extends ConsumerState<_ItemSheetBody> {
     // Editing the item's definition is a different capability from moving its
     // stock: a medic logs a dispense, a lead decides what the detachment
     // stocks at all.
-    final onEdit = ref.whenCan(
+    final onEdit = ref.accessIn(widget.detachmentId).when(
       Cap.inventoryItemManage,
       () {
         Navigator.of(context).pop();
@@ -340,7 +383,6 @@ class _ItemSheetBodyState extends ConsumerState<_ItemSheetBody> {
           '/detachment/${widget.detachmentId}/storage/${widget.item.id}/edit',
         );
       },
-      detachmentId: widget.detachmentId,
     );
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -349,12 +391,17 @@ class _ItemSheetBodyState extends ConsumerState<_ItemSheetBody> {
         children: [
           Row(children: [
             Expanded(
-              child: Text(
-                '${S.currentStock}: '
-                '${stockBreakdownLabel(widget.item)}'
-                ' · ${S.minimumLevel} '
-                '${toArabicIndic('${widget.item.minimum}')} ${S.baseUnits}',
-                style: TextStyle(color: c.ink3, fontSize: 12),
+              child: AppMeta(
+                parts: [
+                  AppMetaText(
+                    '${S.currentStock}: ${stockBreakdownLabel(widget.item)}',
+                    emphasis: true,
+                  ),
+                  AppMetaText.total(
+                    '${S.minimumLevel} ${S.baseUnits}',
+                    widget.item.minimum,
+                  ),
+                ],
               ),
             ),
             if (onEdit != null)
@@ -611,7 +658,7 @@ class _MovementRow extends StatelessWidget {
                   style: TextStyle(color: c.ink, fontSize: 13),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis),
-              Text(AppDate.dayMonthTime(movement.at),
+              Text(AppTime.dayTime(movement.at),
                   style: TextStyle(color: c.ink3, fontSize: 11)),
               if (movement.stockBefore != null && movement.stockAfter != null)
                 Text(
@@ -636,40 +683,6 @@ class _MovementRow extends StatelessWidget {
           style: AppTypography.digits(inflow ? c.ok : c.warn, size: 14),
         ),
       ]),
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  const _Chip({required this.label, required this.active, required this.onTap});
-
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.c;
-    return PressScale(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppRadii.pill),
-      child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 6),
-        decoration: BoxDecoration(
-          color: active ? c.primary : c.surface,
-          border: Border.all(color: active ? c.primary : c.line2),
-          borderRadius: BorderRadius.circular(AppRadii.pill),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: active ? c.primaryInk : c.ink2,
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
     );
   }
 }

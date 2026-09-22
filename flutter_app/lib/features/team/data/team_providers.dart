@@ -1,12 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../demo/data/demo_workspace.dart';
 import '../../../core/result/result.dart';
 import '../domain/team_models.dart';
 import '../domain/team_repository.dart';
 import 'mock_team_repository.dart';
 
 final teamRepositoryProvider = Provider<TeamRepository>((ref) {
-  return MockTeamRepository();
+  return ref.watch(demoWorkspaceProvider)?.team ?? MockTeamRepository();
 });
 
 final teamListProvider =

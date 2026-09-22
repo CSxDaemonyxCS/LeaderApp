@@ -155,8 +155,8 @@ Future<void> _pumpPage(
 /// Swallows two known, pre-existing debug complaints that this task did not
 /// introduce and was not asked to fix, and nothing else:
 ///
-/// - the `GlassBottomNav` horizontal overflow the tenant smoke test already
-///   documents and tolerates for the same reason;
+/// - the `GlassBottomNav` horizontal overflow the detachment group smoke
+///   test already documents and tolerates for the same reason;
 /// - the Settings page's `ListTile`-inside-a-decorated-`_SettingsSection`
 ///   ink assertion, which fires on `main` for every existing Settings row
 ///   the moment that screen is rendered in a test.

@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../../core/access/capability.dart';
 import '../../../core/access/capability_guard.dart';
 import '../../../core/format/app_date.dart';
+import '../../../core/format/app_number.dart';
+import '../../../core/format/app_time.dart';
 import '../../../core/motion/animated_counter.dart';
 import '../../../core/motion/press_scale.dart';
 import '../../../core/motion/stagger.dart';
@@ -13,6 +15,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/async_result.dart';
 import '../../../core/widgets/empty_state.dart';
+import '../../../core/widgets/forward_chevron.dart';
 import '../../../core/widgets/skeleton.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_chip.dart';
@@ -71,16 +74,15 @@ class _DetachmentMemberStatusPageState
   @override
   Widget build(BuildContext context) {
     final c = context.c;
-    final onEdit = ref.whenCan(
-      Cap.memberEdit,
-      () => context.push('/detachment/$detachmentId/member/$memberId/edit'),
-      detachmentId: detachmentId,
-    );
+    final onEdit = ref.accessIn(detachmentId).when(
+          Cap.memberEdit,
+          () => context.push('/detachment/$detachmentId/member/$memberId/edit'),
+        );
 
     final today = dateOnly(DateTime.now());
     final query = AttendanceStatsQuery(
       detachmentId: detachmentId,
-      from: today.subtract(Duration(days: _range.days - 1)),
+      from: addDays(today, -(_range.days - 1)),
       to: today,
       memberId: memberId,
     );
@@ -298,8 +300,11 @@ class _TodayAssignment extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final caps = ref.capabilities;
-    final canOpen = caps.canAnyIn(detachmentId, const {
+    // The management sheet is a set of writes, so it opens through
+    // `DetachmentAccess`: on a finished detachment every one of these five
+    // keys resolves false and the row stays a row.
+    final access = ref.accessIn(detachmentId);
+    final canOpen = access.canAny(const {
       Cap.shiftManage,
       Cap.shiftAssign,
       Cap.shiftDelete,
@@ -335,13 +340,11 @@ class _TodayAssignment extends ConsumerWidget {
                           ref: ref,
                           shift: shift,
                           detachmentId: detachmentId,
-                          canAssign: caps.canIn(detachmentId, Cap.shiftAssign),
-                          canRecord: caps.canIn(
-                              detachmentId, Cap.shiftAttendanceRecord),
-                          canOverride: caps.canIn(
-                              detachmentId, Cap.shiftAttendanceOverride),
-                          canManage: caps.canIn(detachmentId, Cap.shiftManage),
-                          canDelete: caps.canIn(detachmentId, Cap.shiftDelete),
+                          canAssign: access.can(Cap.shiftAssign),
+                          canRecord: access.can(Cap.shiftAttendanceRecord),
+                          canOverride: access.can(Cap.shiftAttendanceOverride),
+                          canManage: access.can(Cap.shiftManage),
+                          canDelete: access.can(Cap.shiftDelete),
                         )
                     : null,
               ),
@@ -395,8 +398,7 @@ class _AssignmentRow extends StatelessWidget {
           ],
         ),
       ),
-      if (onOpen != null)
-        Icon(Icons.chevron_left_rounded, size: 18, color: c.ink3),
+      if (onOpen != null) const ForwardChevron(size: 18),
     ]);
 
     if (onOpen == null) return row;
@@ -441,12 +443,7 @@ class _DetailCard extends StatelessWidget {
         children: [
           Text(
             title,
-            style: TextStyle(
-              color: c.ink3,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.6,
-            ),
+            style: AppTypography.eyebrow(c),
           ),
           const SizedBox(height: AppSpacing.sm),
           ...children,
@@ -618,11 +615,7 @@ class _History extends StatelessWidget {
             _Metric(S.presentTotal, summary?.presentCount ?? 0),
             _Metric(S.absentTotal, summary?.absentCount ?? 0),
             _Metric(S.completedTotal, summary?.completedCount ?? 0),
-            _Metric(
-              S.attendancePercent,
-              _percent(summary),
-              suffix: '٪',
-            ),
+            _Metric.percent(S.attendancePercent, _percent(summary)),
           ],
         ),
         const SectionHeader(title: S.memberAttendanceLog),
@@ -698,8 +691,7 @@ class _DayCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${AppDate.weekdayOf(record.shiftDate)} · '
-                    '${AppDate.dayMonth(record.shiftDate)}',
+                    AppTime.weekdayDay(record.shiftDate),
                     style: TextStyle(
                         color: c.ink,
                         fontSize: 14,
@@ -742,9 +734,8 @@ class _DayCard extends StatelessWidget {
   }
 }
 
-/// A label with a time. The time is forced left-to-right — `AppDate.time`
-/// leaves that to the caller, and `٠٨:٣٠` inside an RTL run otherwise flips
-/// its two halves.
+/// A label with a time. [AppTime] isolates the clock without changing the
+/// direction of the surrounding Arabic row.
 class _TimePill extends StatelessWidget {
   const _TimePill({required this.label, required this.at, required this.color});
 
@@ -758,8 +749,7 @@ class _TimePill extends StatelessWidget {
     return Row(mainAxisSize: MainAxisSize.min, children: [
       Text('$label ', style: TextStyle(color: c.ink3, fontSize: 12)),
       Text(
-        at == null ? '—' : AppDate.time(at!),
-        textDirection: TextDirection.ltr,
+        at == null ? '—' : AppTime.time(at!),
         style: AppTypography.digits(color, size: 13),
       ),
     ]);
@@ -767,11 +757,12 @@ class _TimePill extends StatelessWidget {
 }
 
 class _Metric extends StatelessWidget {
-  const _Metric(this.label, this.value, {this.suffix = ''});
+  const _Metric(this.label, this.value) : percentage = false;
+  const _Metric.percent(this.label, this.value) : percentage = true;
 
   final String label;
   final int value;
-  final String suffix;
+  final bool percentage;
 
   @override
   Widget build(BuildContext context) {
@@ -789,7 +780,7 @@ class _Metric extends StatelessWidget {
         children: [
           Text(label, style: TextStyle(color: c.ink3, fontSize: 11)),
           const SizedBox(height: 2),
-          Text('${toArabicIndic('$value')}$suffix',
+          Text(percentage ? AppNumber.percent(value) : AppNumber.count(value),
               style: AppTypography.digits(c.ink, size: 17)),
         ],
       ),

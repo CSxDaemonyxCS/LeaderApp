@@ -9,13 +9,41 @@ import '../domain/attendance_policy.dart';
 import '../domain/shift_models.dart';
 import '../domain/shift_repository.dart';
 
+/// The weekly repeats one detachment runs: weekday, period, centre, how many
+/// are needed, and the roster ids that start out assigned.
+typedef ShiftSeedPlan = Map<
+    String,
+    List<
+        (
+          int weekday,
+          ShiftPeriod period,
+          String center,
+          int needed,
+          List<String> members
+        )>>;
+
+/// The same, for a detachment that has ended: each row also says how many
+/// weeks back it ran.
+typedef ShiftHistorySeedPlan = Map<
+    String,
+    List<
+        (
+          int weeksAgo,
+          int weekday,
+          ShiftPeriod period,
+          String center,
+          int needed,
+          List<String> members
+        )>>;
+
 class _AttendanceValidation implements Exception {
   const _AttendanceValidation(this.code);
 
   final String code;
 }
 
-/// In-memory schedule for every active detachment.
+/// In-memory schedule for every detachment — the archived one included, whose
+/// occurrences are seeded in the past and finished.
 ///
 /// Two rules hold this file together:
 ///
@@ -27,12 +55,24 @@ class _AttendanceValidation implements Exception {
 ///    something in it whenever the app is opened — including a filled last
 ///    week, which is what makes "copy last week" demonstrable.
 class MockShiftRepository implements ShiftRepository {
-  /// [clock] is injectable so a test can pin "now" for the one-hour
-  /// attendance window; production passes nothing and gets [DateTime.now].
-  MockShiftRepository(this._directory, {DateTime Function()? clock})
-      : _clock = clock ?? DateTime.now {
+  /// [clock] is injectable so a test can pin every meaning of "now": seed
+  /// dates as well as the one-hour attendance window. Production passes
+  /// nothing and gets [DateTime.now].
+  /// [plan] and [history] replace the seeded weeks — the Customer Demo
+  /// workspace passes its own small schedule and no archive.
+  MockShiftRepository(
+    this._directory, {
+    DateTime Function()? clock,
+    ShiftSeedPlan? plan,
+    ShiftHistorySeedPlan? history,
+  })  : _clock = clock ?? DateTime.now,
+        _seedPlan = plan ?? _plan,
+        _seedHistory = history ?? _historyPlan {
     _seed();
   }
+
+  final ShiftSeedPlan _seedPlan;
+  final ShiftHistorySeedPlan _seedHistory;
 
   final TeamRepository _directory;
   final DateTime Function() _clock;
@@ -53,7 +93,7 @@ class MockShiftRepository implements ShiftRepository {
   /// assigned to each. Distinct per detachment on purpose: switching
   /// detachments has to show a visibly different week, otherwise a scoping
   /// leak looks the same as correct behaviour.
-  static const _plan = <String,
+  static const ShiftSeedPlan _plan = <String,
       List<
           (
             int weekday,
@@ -109,14 +149,65 @@ class MockShiftRepository implements ShiftRepository {
       ),
       (DateTime.wednesday, ShiftPeriod.evening, 'مركز جبلة', 5, ['m24']),
     ],
-    // d_north_arch is archived and runs no shifts.
+    // d_north_arch is archived: it ran, and it stopped. Its schedule is
+    // seeded separately, in the past, by [_historyPlan].
+  };
+
+  /// The archived detachment's finished schedule.
+  ///
+  /// Dated three and four weeks back rather than relative to this week,
+  /// because a detachment that has ended does not have a "this week". Every
+  /// occurrence is completed, so the archive's shifts, its attendance, and
+  /// the statistics drawn from them all have real records behind them
+  /// instead of an empty tab.
+  static const ShiftHistorySeedPlan _historyPlan = <String,
+      List<
+          (
+            int weeksAgo,
+            int weekday,
+            ShiftPeriod period,
+            String center,
+            int needed,
+            List<String> members
+          )>>{
+    'd_north_arch': [
+      (
+        4,
+        DateTime.saturday,
+        ShiftPeriod.morning,
+        'مركز الأشرفية',
+        4,
+        ['m26', 'm27', 'm28']
+      ),
+      (4, DateTime.monday, ShiftPeriod.evening, 'مركز الأشرفية', 4, ['m29']),
+      // A night shift, so the archive carries the one case a reader has to be
+      // able to trust: a run that ends after midnight still belongs to the
+      // day it began.
+      (
+        4,
+        DateTime.wednesday,
+        ShiftPeriod.night,
+        'مركز الأشرفية',
+        3,
+        ['m26', 'm29']
+      ),
+      (
+        3,
+        DateTime.sunday,
+        ShiftPeriod.morning,
+        'مركز الأشرفية',
+        4,
+        ['m27', 'm28', 'm29']
+      ),
+      (3, DateTime.tuesday, ShiftPeriod.evening, 'مركز الأشرفية', 3, ['m26']),
+    ],
   };
 
   void _seed() {
-    final thisWeek = startOfWeek(DateTime.now());
+    final thisWeek = startOfWeek(_clock());
     final lastWeek = thisWeek.subtract(const Duration(days: 7));
 
-    for (final entry in _plan.entries) {
+    for (final entry in _seedPlan.entries) {
       for (final row in entry.value) {
         final (weekday, period, center, needed, members) = row;
         final times = period.times!;
@@ -165,11 +256,39 @@ class MockShiftRepository implements ShiftRepository {
         }
       }
     }
+
+    for (final entry in _seedHistory.entries) {
+      for (final row in entry.value) {
+        final (weeksAgo, weekday, period, center, needed, members) = row;
+        final times = period.times!;
+        final weekStart = thisWeek.subtract(Duration(days: 7 * weeksAgo));
+        final shiftDate = _dayOfWeek(weekStart, weekday);
+        // No template: the repeat that produced these is over, and a live
+        // template on an archived detachment would offer to materialise days
+        // it can no longer run.
+        _shifts.add(Shift(
+          id: 'sh${_nextShift++}',
+          detachmentId: entry.key,
+          date: shiftDate,
+          centerName: center,
+          startMinutes: times.$1,
+          endMinutes: times.$2,
+          needed: needed,
+          attendees: _placeholders(
+            entry.key,
+            members,
+            shiftDate,
+            times,
+            completed: true,
+          ),
+        ));
+      }
+    }
   }
 
   /// The date of [weekday] inside the week beginning [weekStart] (Saturday).
   static DateTime _dayOfWeek(DateTime weekStart, int weekday) =>
-      weekStart.add(Duration(days: (weekday - weekStartsOn) % 7));
+      addDays(weekStart, (weekday - weekStartsOn) % 7);
 
   /// Seed attendees are placeholders carrying only an id; every read
   /// re-resolves them against the live roster in [_hydrate], so a member
@@ -265,7 +384,10 @@ class MockShiftRepository implements ShiftRepository {
       String detachmentId, DateTime weekStart) async {
     await _latency();
     final start = startOfWeek(weekStart);
-    final end = start.add(const Duration(days: 7));
+    // Calendar days, not 168 hours: in a DST week the absolute span is 167
+    // or 169, and the exclusive bound would then drop the last day of the
+    // week or pull in the first day of the next one.
+    final end = addDays(start, 7);
     final week = _shifts
         .where((s) =>
             s.detachmentId == detachmentId &&
@@ -284,7 +406,7 @@ class MockShiftRepository implements ShiftRepository {
   ) async {
     await _latency();
     final start = dateOnly(from);
-    final end = dateOnly(to).add(const Duration(days: 1));
+    final end = addDays(dateOnly(to), 1);
     final range = _shifts
         .where(
           (shift) =>
@@ -301,7 +423,7 @@ class MockShiftRepository implements ShiftRepository {
   Future<Result<List<Shift>>> listForDetachmentToday(
       String detachmentId) async {
     await _latency();
-    final today = dateOnly(DateTime.now());
+    final today = dateOnly(_clock());
     final list = _shifts
         .where((s) => s.detachmentId == detachmentId && s.date == today)
         .toList()
@@ -631,10 +753,8 @@ class MockShiftRepository implements ShiftRepository {
     return switch (state) {
       AttendanceState.absent => markAbsent(shiftId, memberId),
       AttendanceState.notCheckedIn => resetAttendance(shiftId, memberId),
-      AttendanceState.checkedIn =>
-        recordCheckIn(shiftId, memberId, DateTime.now()),
-      AttendanceState.checkedOut =>
-        recordCheckOut(shiftId, memberId, DateTime.now()),
+      AttendanceState.checkedIn => recordCheckIn(shiftId, memberId, _clock()),
+      AttendanceState.checkedOut => recordCheckOut(shiftId, memberId, _clock()),
     };
   }
 
@@ -949,18 +1069,27 @@ class MockShiftRepository implements ShiftRepository {
       return const Failure('لا يمكن نسخ الأسبوع على نفسه.', code: 'validation');
     }
 
+    final end = addDays(from, 7);
     final source = _shifts
         .where((s) =>
             s.detachmentId == detachmentId &&
             !s.date.isBefore(from) &&
-            s.date.isBefore(from.add(const Duration(days: 7))))
+            s.date.isBefore(end))
         .toList()
       ..sort(_order);
 
     return Success(_cloneOnto(
       detachmentId: detachmentId,
       source: source,
-      dayFor: (s) => to.add(Duration(days: s.date.difference(from).inDays)),
+      // Calendar arithmetic on both halves. `s.date.difference(from).inDays`
+      // counts absolute 24-hour spans, so a source week containing a DST
+      // change reports six days between two dates that are seven apart and
+      // two source days collapse onto one target day; `to.add(Duration(days:
+      // n))` then lands the result at 23:00 the previous day when the
+      // *target* week changes offset, which stops the copy being a
+      // normalized date and makes `_exists` and every `s.date == day` read
+      // in this repository miss it. Both failures are silent.
+      dayFor: (s) => addDays(to, calendarDaysBetween(from, s.date)),
     ));
   }
 

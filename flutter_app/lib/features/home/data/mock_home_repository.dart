@@ -23,7 +23,7 @@ class MockHomeRepository implements HomeRepository {
   MockHomeRepository({
     required DetachmentRepository detachments,
     required ShiftRepository shifts,
-    required InventoryRepository inventory,
+    InventoryRepository? inventory,
     required TeamRepository team,
   })  : _detachments = detachments,
         _shifts = shifts,
@@ -32,7 +32,7 @@ class MockHomeRepository implements HomeRepository {
 
   final DetachmentRepository _detachments;
   final ShiftRepository _shifts;
-  final InventoryRepository _inventory;
+  final InventoryRepository? _inventory;
   final TeamRepository _team;
 
   @override
@@ -64,7 +64,9 @@ class MockHomeRepository implements HomeRepository {
       today.subtract(const Duration(days: 1)),
       today.add(const Duration(days: 1)),
     );
-    final items = await _inventory.listForDetachment(detachmentId);
+    final items = _inventory == null
+        ? const Success<List<InventoryItem>>([])
+        : await _inventory.listForDetachment(detachmentId);
     final roster = await _team.listForDetachment(detachmentId);
 
     final shiftList = _dataOr(shifts, const <Shift>[])..sort(_byStart);

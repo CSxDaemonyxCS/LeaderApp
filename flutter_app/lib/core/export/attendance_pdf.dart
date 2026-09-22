@@ -74,7 +74,7 @@ abstract final class AttendancePdfBuilder {
                   ),
                   pw.SizedBox(height: 2),
                   pw.Text(
-                    document.tenantName,
+                    document.detachmentGroupName,
                     style: const pw.TextStyle(
                       color: PdfColor.fromInt(0xff4a5058),
                       fontSize: 9,
@@ -134,14 +134,11 @@ abstract final class AttendancePdfBuilder {
         switch (block) {
           ReportFacts(:final pairs) => _facts(pairs),
           ReportTable(:final columns, :final data) => _table(columns, data),
-          ReportSeries(:final labels, :final values, :final suffix) => _table(
+          ReportSeries(:final labels, :final values) => _table(
               [S.workshopDate, block.title],
               [
                 for (var index = 0; index < values.length; index++)
-                  [
-                    labels[index],
-                    '${toArabicIndic('${values[index]}')}$suffix'
-                  ],
+                  [labels[index], block.formatValue(values[index])],
               ],
             ),
         },

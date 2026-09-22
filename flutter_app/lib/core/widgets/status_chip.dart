@@ -2,13 +2,20 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_palette.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_typography.dart';
 
 enum StatusKind { ok, warn, crit, info, muted }
 
 class StatusChip extends StatelessWidget {
-  const StatusChip({super.key, required this.kind, required this.label});
+  const StatusChip({
+    super.key,
+    required this.kind,
+    required this.label,
+    this.icon,
+  });
   final StatusKind kind;
   final String label;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
@@ -27,13 +34,25 @@ class StatusChip extends StatelessWidget {
         border: Border.all(color: fg),
         borderRadius: BorderRadius.circular(AppRadii.pill),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: fg,
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            ExcludeSemantics(child: Icon(icon, color: fg, size: 15)),
+            const SizedBox(width: 5),
+          ],
+          Flexible(
+            child: Text(
+              label,
+              // The chip's own type token, not whatever `DefaultTextStyle` it
+              // lands in. A `StatusChip` is placed in `ListTile` slots and
+              // inside `Wrap`s all over the app, and inheriting a family is
+              // how a chip full of Arabic-Indic digits ends up on a font that
+              // has none.
+              style: AppTypography.chip(c).copyWith(color: fg),
+            ),
+          ),
+        ],
       ),
     );
   }

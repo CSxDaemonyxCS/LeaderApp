@@ -6,13 +6,23 @@ import '../domain/inventory_repository.dart';
 
 /// In-memory stock. Every active detachment carries items, including at least
 /// one low and one expiring line, so the Storage tab is never blank and the
-/// warning styles are always exercised.
+/// warning styles are always exercised. The archived one carries stock too —
+/// the closing quantities and the movements that produced them, which is what
+/// the archive reads back.
 class MockInventoryRepository implements InventoryRepository {
-  MockInventoryRepository();
+  /// [items] and [movements] replace the seed — the Customer Demo workspace
+  /// passes its own stock.
+  MockInventoryRepository({
+    List<InventoryItem>? items,
+    List<InventoryMovement>? movements,
+  })  : _items = List.of(items ?? _defaultItems()),
+        _movements = List.of(movements ?? _defaultMovements());
 
   final _rand = Random(41);
 
-  final List<InventoryItem> _items = [
+  final List<InventoryItem> _items;
+
+  static List<InventoryItem> _defaultItems() => [
     // ---- d_dam_central ----
     InventoryItem(
       id: 'i1',
@@ -164,10 +174,46 @@ class MockInventoryRepository implements InventoryRepository {
       level: StockLevel.ok,
     ),
 
-    // d_north_arch is archived and holds no stock.
+    // ---- d_north_arch (archived) ----
+    // The stock a finished detachment was left holding. It is the *stored*
+    // quantity, not a reconstruction: this domain keeps a movement log per
+    // item (below), and the archive shows that log rather than inventing a
+    // stock level for any earlier date.
+    const InventoryItem(
+      id: 'i15',
+      detachmentId: 'd_north_arch',
+      name: 'شاش طبي ١٠سم',
+      unit: 'رول',
+      currentStock: 9,
+      minimum: 10,
+      expiresOn: null,
+      level: StockLevel.low,
+    ),
+    InventoryItem(
+      id: 'i16',
+      detachmentId: 'd_north_arch',
+      name: 'محلول ملحي ٥٠٠مل',
+      unit: 'كيس',
+      currentStock: 14,
+      minimum: 8,
+      expiresOn: DateTime.now().subtract(const Duration(days: 5)),
+      level: StockLevel.ok,
+    ),
+    const InventoryItem(
+      id: 'i17',
+      detachmentId: 'd_north_arch',
+      name: 'قفازات معقّمة',
+      unit: 'علبة',
+      currentStock: 0,
+      minimum: 4,
+      expiresOn: null,
+      level: StockLevel.empty,
+    ),
   ];
 
-  final List<InventoryMovement> _movements = [
+  final List<InventoryMovement> _movements;
+
+  static List<InventoryMovement> _defaultMovements() => [
     InventoryMovement(
         id: 'mv1',
         itemId: 'i1',
@@ -217,9 +263,48 @@ class MockInventoryRepository implements InventoryRepository {
         quantity: 1,
         reason: 'نقل مريض إلى المشفى',
         at: DateTime.now().subtract(const Duration(hours: 20))),
+
+    // The archived detachment's movement log — dated inside the weeks it
+    // actually ran, so the archive's storage tab has a real history to show
+    // and not just a closing number.
+    InventoryMovement(
+        id: 'mv8',
+        itemId: 'i15',
+        direction: MovementDirection.inflow,
+        quantity: 24,
+        reason: 'تجهيز أولي · مركز الأشرفية',
+        at: DateTime.now().subtract(const Duration(days: 33))),
+    InventoryMovement(
+        id: 'mv9',
+        itemId: 'i15',
+        direction: MovementDirection.outflow,
+        quantity: 15,
+        reason: 'إسعاف ميداني',
+        at: DateTime.now().subtract(const Duration(days: 24))),
+    InventoryMovement(
+        id: 'mv10',
+        itemId: 'i16',
+        direction: MovementDirection.inflow,
+        quantity: 20,
+        reason: 'تسليم من المستودع المركزي',
+        at: DateTime.now().subtract(const Duration(days: 31))),
+    InventoryMovement(
+        id: 'mv11',
+        itemId: 'i16',
+        direction: MovementDirection.outflow,
+        quantity: 6,
+        reason: 'صرف شفت مسائي',
+        at: DateTime.now().subtract(const Duration(days: 22))),
+    InventoryMovement(
+        id: 'mv12',
+        itemId: 'i17',
+        direction: MovementDirection.outflow,
+        quantity: 12,
+        reason: 'استهلاك الأيام الأخيرة',
+        at: DateTime.now().subtract(const Duration(days: 21))),
   ];
 
-  int _nextItem = 15;
+  int _nextItem = 18;
 
   Future<void> _latency() => Future<void>.delayed(
         Duration(milliseconds: 280 + _rand.nextInt(340)),

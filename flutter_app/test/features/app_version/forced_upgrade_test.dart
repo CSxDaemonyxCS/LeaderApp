@@ -195,6 +195,9 @@ void main() {
       await tester.pump();
 
       expect(find.text(S.upgradeTitle), findsOneWidget);
+      expect(find.text(S.productNameEn), findsOneWidget);
+      expect(find.text(S.productNameAr), findsOneWidget);
+      expect(find.textContaining('MTM'), findsNothing);
       expect(find.text(S.upgradeCurrentVersion), findsOneWidget);
       expect(find.text(AppInfo.version), findsOneWidget);
       expect(find.text(S.upgradeMinimumVersion), findsOneWidget);
@@ -239,6 +242,11 @@ void main() {
       ));
       await tester.pump(Duration.zero);
       await tester.pump();
+      // Point 3: the app boots on `StartupPage` and the gate's verdict lands a
+      // microtask later, so the *route change* onto this screen is in flight
+      // here. Let it finish before asking what is still animating — a looping
+      // animation, which is what this test is about, would outlive it.
+      await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.byType(UpgradeRequiredPage), findsOneWidget);
       expect(find.text(S.upgradeTitle), findsOneWidget);
@@ -247,6 +255,28 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsNothing);
       // Nothing is still in flight — a settled tree with no pending frames.
       expect(tester.hasRunningAnimations, isFalse);
+    });
+
+    testWidgets('Arabic brand stays joined at 320dp and 1.6x text',
+        (tester) async {
+      tester.view.physicalSize = const Size(320, 720);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 1.6;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+      final container = _containerWith(_FakeVersionRepo(
+        const Success(_unsupported),
+      ));
+      await tester
+          .pumpWidget(_app(container, container.read(appRouterProvider)));
+      await tester.pump(Duration.zero);
+      await tester.pump();
+
+      final arabicBrand = tester.widget<Text>(find.text(S.productNameAr));
+      expect(arabicBrand.style?.letterSpacing, 0);
+      expect(find.textContaining('MTM'), findsNothing);
+      expect(tester.takeException(), isNull);
     });
   });
 
@@ -526,6 +556,8 @@ const _signedIn = AuthUser(
   id: 'u_1',
   name: 'مشرف',
   email: 'admin@mtm.org',
+  role: AuthRole.mainAdmin,
+  saasTenantId: 'saas_test',
   capabilities: Capabilities(),
   orgName: 'MTM',
 );

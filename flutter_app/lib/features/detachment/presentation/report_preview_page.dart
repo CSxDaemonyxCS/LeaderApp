@@ -107,7 +107,10 @@ class ReportPreviewPage extends ConsumerWidget {
         try {
           if (spec.format == ReportFormat.pdf) {
             final bytes = await AttendancePdfBuilder.build(doc);
-            await Printing.sharePdf(bytes: bytes, filename: 'mtm-report.pdf');
+            await Printing.sharePdf(
+              bytes: bytes,
+              filename: 'leader-report.pdf',
+            );
           } else {
             await Clipboard.setData(ClipboardData(text: doc.toCsv()));
           }

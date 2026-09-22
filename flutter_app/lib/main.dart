@@ -10,10 +10,12 @@ import 'core/router/app_router.dart';
 import 'core/sync/sync_scheduler.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
+import 'features/auth/data/onboarding_controller.dart';
 import 'features/conflict/data/conflict_review_recording.dart';
 import 'features/settings/data/frame_rate_provider.dart';
 import 'features/settings/data/motion_level_provider.dart';
 import 'features/shift/data/shift_conflict_review.dart';
+import 'l10n/strings.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -54,6 +56,19 @@ class _MtmAppState extends ConsumerState<MtmApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _applyAndroidSystemUi();
+    // Point 17B — hydrate the pre-session journey from the device vault.
+    // Deferred to a post-frame callback, like Auto Sync below: calling
+    // `restore()` synchronously in `initState` sets provider state while
+    // GoRouter's `refreshListenable` is still mounting for the very first
+    // frame, and that reentrant rebuild-during-mount is what corrupted the
+    // element tree (`'_elements.contains(element)'`) under
+    // `admin_profile_test.dart`. A post-frame callback still runs before the
+    // classifier can settle on anything: `currentUser()`'s own restore takes
+    // real latency in every build, real or mocked, so `AuthGate.restoring`
+    // already holds `/startup` for longer than this needs.
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => ref.read(onboardingControllerProvider.notifier).restore(),
+    );
     // Auto Sync is the primary path: once the app is up, ask the
     // coordinator to drain anything left pending from a previous run. It is
     // a no-op when the outbox is empty.
@@ -102,7 +117,7 @@ class _MtmAppState extends ConsumerState<MtmApp> with WidgetsBindingObserver {
     ref.watch(frameRateProvider);
 
     return MaterialApp.router(
-      title: 'MTM',
+      title: S.appName,
       debugShowCheckedModeBanner: false,
       routerConfig: router,
       // Global RTL + MotionScope for the whole subtree.

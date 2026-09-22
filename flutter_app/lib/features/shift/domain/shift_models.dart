@@ -1,5 +1,13 @@
+import '../../../core/time/calendar_day.dart';
 import '../../team/domain/team_models.dart';
 import 'attendance_correction.dart';
+
+/// Calendar-day arithmetic, re-exported so every schedule file keeps reading
+/// `dateOnly`/`addDays` from the domain it already imports. The definitions
+/// live in `core/time/calendar_day.dart` because non-schedule code (date
+/// formatting, reports) needs the same rule and must not import a feature.
+export '../../../core/time/calendar_day.dart'
+    show dateOnly, addDays, calendarDaysBetween;
 
 /// Where a week begins in this app: **Saturday**.
 ///
@@ -9,15 +17,15 @@ import 'attendance_correction.dart';
 const int weekStartsOn = DateTime.saturday;
 
 /// The Saturday on or before [d], at local midnight.
+///
+/// Steps by calendar day, not by `Duration`: subtracting six absolute days
+/// from a Saturday midnight across a DST boundary lands at 23:00 or 01:00,
+/// and a week start that is not midnight breaks every `s.date == day` in the
+/// schedule. See `core/time/calendar_day.dart`.
 DateTime startOfWeek(DateTime d) {
-  final day = DateTime(d.year, d.month, d.day);
-  return day.subtract(Duration(days: (day.weekday - weekStartsOn) % 7));
+  final day = dateOnly(d);
+  return addDays(day, -((day.weekday - weekStartsOn) % 7));
 }
-
-/// Local midnight of [d] — the canonical form of a shift's date. Two shifts
-/// on the same day must compare equal, and a stray hour on a `DateTime` is
-/// exactly how that quietly stops being true.
-DateTime dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
 /// The three shifts almost every detachment actually runs, plus an escape
 /// hatch. Offering these as one tap is the single biggest thing that makes

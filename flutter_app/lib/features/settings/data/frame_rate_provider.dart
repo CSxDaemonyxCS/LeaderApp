@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/display/display_refresh.dart';
@@ -43,8 +44,14 @@ class FrameRateController extends AsyncNotifier<FrameRatePreference> {
 
   Future<void> set(FrameRatePreference pref) async {
     state = AsyncValue.data(pref);
-    await ref.read(displayRefreshProvider).apply(pref);
-    await ref.read(settingsRepositoryProvider).updateFrameRate(pref);
+    try {
+      await ref.read(displayRefreshProvider).apply(pref);
+      await ref.read(settingsRepositoryProvider).updateFrameRate(pref);
+    } catch (e) {
+      // Same rule as the other preferences: a failed write never rolls the
+      // user's visible choice back.
+      debugPrint('FrameRateController: preference not stored: $e');
+    }
   }
 }
 

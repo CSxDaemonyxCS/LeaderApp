@@ -1,3 +1,5 @@
+import 'dart:ui' show Tristate;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mtm/core/motion/motion_level.dart';
@@ -74,5 +76,37 @@ void main() {
   testWidgets('the same holds under reduced motion', (tester) async {
     await pumpNav(tester, MotionLevel.reduced);
     await walkMorphs(tester);
+  });
+
+  testWidgets('every destination has one Arabic label and selection state',
+      (tester) async {
+    final handle = tester.ensureSemantics();
+    await pumpNav(tester, MotionLevel.reduced);
+
+    final home = tester.getSemantics(find.bySemanticsLabel('الرئيسية'));
+    expect(home.label, 'الرئيسية');
+    expect(home.flagsCollection.isButton, isTrue);
+    expect(home.flagsCollection.isSelected, Tristate.isTrue);
+
+    final detachments = tester.getSemantics(find.bySemanticsLabel('المفارز'));
+    expect(detachments.label, 'المفارز');
+    expect(detachments.flagsCollection.isButton, isTrue);
+    expect(detachments.flagsCollection.isSelected, Tristate.isFalse);
+
+    // `ExcludeSemantics` keeps the painted active label from creating a
+    // second screen-reader node with the same text.
+    expect(find.bySemanticsLabel('الرئيسية'), findsOneWidget);
+    expect(find.bySemanticsLabel('المفارز'), findsOneWidget);
+
+    await tester.tap(find.bySemanticsLabel('المفارز'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .getSemantics(find.bySemanticsLabel('المفارز'))
+          .flagsCollection
+          .isSelected,
+      Tristate.isTrue,
+    );
+    handle.dispose();
   });
 }

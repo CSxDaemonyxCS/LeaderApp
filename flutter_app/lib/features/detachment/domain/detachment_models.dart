@@ -3,7 +3,7 @@ enum DetachmentStatus { active, archived }
 class Detachment {
   const Detachment({
     required this.id,
-    required this.tenantId,
+    required this.detachmentGroupId,
     required this.name,
     required this.region,
     required this.mainCenter,
@@ -16,10 +16,10 @@ class Detachment {
 
   final String id;
 
-  /// The tenant this detachment belongs to. Every detachment has exactly one;
-  /// there is no unfiled detachment, because the tenant is what a detachment
-  /// is created *inside*.
-  final String tenantId;
+  /// The detachment group this detachment belongs to. Every detachment has
+  /// exactly one; there is no unfiled detachment, because the detachment group
+  /// is what a detachment is created *inside*.
+  final String detachmentGroupId;
 
   final String name;
   final String region;
@@ -42,7 +42,7 @@ class Detachment {
   }) =>
       Detachment(
         id: id,
-        tenantId: tenantId,
+        detachmentGroupId: detachmentGroupId,
         name: name ?? this.name,
         region: region ?? this.region,
         mainCenter: mainCenter ?? this.mainCenter,
@@ -55,7 +55,7 @@ class Detachment {
 
   factory Detachment.fromJson(Map<String, dynamic> j) => Detachment(
         id: j['id'] as String,
-        tenantId: j['tenantId'] as String,
+        detachmentGroupId: j['detachmentGroupId'] as String,
         name: j['name'] as String,
         region: j['region'] as String,
         mainCenter: j['mainCenter'] as String,
@@ -69,7 +69,7 @@ class Detachment {
 
   Map<String, dynamic> toJson() => {
         'id': id,
-        'tenantId': tenantId,
+        'detachmentGroupId': detachmentGroupId,
         'name': name,
         'region': region,
         'mainCenter': mainCenter,

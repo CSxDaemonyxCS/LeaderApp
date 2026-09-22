@@ -33,8 +33,11 @@ class _S extends ConsumerState<ForgotPasswordPage> {
     setState(() => _busy = false);
     r.when(
       success: (_, {stale = false}) => context.push('/otp'),
-      failure: (m, _) => ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(m))),
+      // Never render backend text here: it can reveal whether the address
+      // exists or which provider owns it. Only a generic service failure is
+      // safe before authentication.
+      failure: (_, __) => ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(S.onboardingTemporaryFailure))),
       offline: (_) => ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text(S.offlineTitle))),
     );
@@ -52,6 +55,8 @@ class _S extends ConsumerState<ForgotPasswordPage> {
         children: [
           TextField(
             controller: _email,
+            readOnly: _busy,
+            textDirection: TextDirection.ltr,
             decoration: const InputDecoration(labelText: S.emailLabel),
             onSubmitted: (_) => _submit(),
           ),

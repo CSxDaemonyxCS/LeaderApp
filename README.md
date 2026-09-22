@@ -1,8 +1,8 @@
-# Handoff: MTM — نظام إدارة فرق الإسعاف التطوعي (Flutter)
+# Handoff: Leader / ليدر — نظام إدارة فرق الإسعاف التطوعي (Flutter)
 
 ## Overview
 
-MTM is an offline-first Arabic-RTL Flutter app for volunteer emergency medical
+Leader is an offline-first Arabic-RTL Flutter app for volunteer emergency medical
 teams. It coordinates:
 
 - **Detachments** (مفرزات) — regional teams, each running centers

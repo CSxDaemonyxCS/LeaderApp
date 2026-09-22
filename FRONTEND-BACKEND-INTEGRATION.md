@@ -12,6 +12,7 @@ faked, and which parts of the contract are **not yet agreed**.
 
 | Document | Holds |
 |---|---|
+| `BACKEND-HANDOFF.md` | The Point 18A **consolidated** backend handoff — cross-cutting rules, inventory, open policies, build order. Start there. |
 | `API_CONTRACT.md` | The **agreed** `v1` contract — endpoints, payloads, error codes. |
 | `DATA-NEEDS.md` | What each screen needs, deliberately with no endpoints or status codes. |
 | **this file** | The **provisional** seams: frontend built ahead of the backend, and the open decisions that blocks. |
@@ -172,7 +173,7 @@ Everything above the seam is already written and must not need changing:
 
 **The fail-open rule, which the backend developer must not undo:** a check only
 blocks the app if it *finds* a reason to. `Offline` and `Failure` at launch
-leave the app running — MTM is offline-first and must open with no network —
+leave the app running — Leader is offline-first and must open with no network —
 *unless* a persisted verdict for this exact build says otherwise. Once the user
 is already blocked, the same failures land on `AppVersionStatus.checkFailed` and
 keep them there: "we could not ask" is never "you may pass." An unreadable
@@ -185,7 +186,7 @@ keep them there: "we could not ask" is never "you may pass." An unreadable
 | The whole endpoint | `MockAppVersionRepository`, `lib/features/app_version/data/mock_app_version_repository.dart` |
 | `minimumVersion` = `1.4.0` | `MockAppVersionRepository.placeholderMinimumVersion` |
 | Persisted verdict storage | `MockAppVersionGateStore` — in-memory for the lifetime of the object, exactly like `MockSettingsRepository`. Proves the seam and the offline-restart behaviour; **not** durable across an OS process restart. |
-| Store / App Store links | `UpdateChannel.androidStore` is real (`applicationId com.mtm.mtm`). `UpdateChannel.iosStore` is empty (no iOS target) and `UpdateChannel.webFallback` is a placeholder landing page. |
+| Store / App Store links | `UpdateChannel.androidStore` is real (`applicationId com.leader.teams`; was `com.mtm.mtm` before the Leader rebrand). `UpdateChannel.iosStore` is empty (no iOS target) and `UpdateChannel.webFallback` is a placeholder landing page. |
 | Opening the destination | `UpdateDestination.open()` copies the resolved link to the clipboard — the launcher-less development build. Production returns `UpdateLaunchOutcome.opened`. |
 
 The mock answers `supported` by default, so a normal build behaves exactly as
@@ -258,7 +259,7 @@ Nothing in `UpgradeRequiredPage` should change in any of these steps.
 A frontend foundation that consumes a future standards-based **RFC 9457
 (`application/problem+json`)** error contract: one typed `Problem` model, one
 Core classifier for the app-wide conditions, a per-feature extension path for
-domain conditions, MTM-owned localized copy for every known condition, and a
+domain conditions, Leader-owned localized copy for every known condition, and a
 safe fallback for codes a shipped build has never heard of.
 
 This entry is the **frontend contract**. It does not implement RFC 9457 server
@@ -276,7 +277,7 @@ behaviour, idempotency, concurrency, `/sync`, or revocation.
 | Presentation metadata | `ProblemView`, `ProblemSurface` (`field` / `inline` / `transient` / `modal` / `fullScreen`) — `lib/core/problem/problem_presentation.dart` |
 | Core classifier (global codes + fallback) | `resolveProblem()` — same file. A bounded `switch`, not a registry. |
 | Localized copy | `S.problemUnexpected*`, `S.errNotFound`, `S.errNotPermitted*`, `S.errConflict*`, `S.errValidation`, `S.errServer`, `S.errNetwork`, `S.problemReferenceLabel` — `lib/l10n/strings.dart` |
-| Representative integration | `AsyncResultView` failure branch (~25 screens) now renders MTM copy for known codes, the generic fallback for unknown, and never the raw `message`. `lib/core/widgets/async_result.dart` |
+| Representative integration | `AsyncResultView` failure branch (~25 screens) now renders Leader copy for known codes, the generic fallback for unknown, and never the raw `message`. `lib/core/widgets/async_result.dart` |
 | Tests | `test/core/problem/problem_test.dart`, `problem_presentation_test.dart`, `async_result_problem_test.dart` |
 
 ### Chosen architecture — **C, hybrid** (Core owns global; features own domain)
@@ -414,7 +415,7 @@ JSON, no raw server text.
 
 ### Feature
 
-The frontend foundation for MTM's offline-first write model: a valid write is
+The frontend foundation for Leader's offline-first write model: a valid write is
 saved locally, the user keeps working, and the write is synchronized to the
 server afterwards — automatically when possible, or from a **مزامنة الآن**
 control in Settings. Every logical write carries one stable idempotency
@@ -941,7 +942,7 @@ type JSON integer, frontend type `String`.**
   `version bigint NOT NULL DEFAULT 1`, enforced by a database trigger, with
   `xmin` explicitly rejected as an alternative (lost on dump/restore, wraps
   around) and ordering defined as "the server-issued version counter, never
-  device timestamp" — the same reasoning applies here: MTM field devices
+  device timestamp" — the same reasoning applies here: Leader field devices
   cannot be trusted to agree on wall-clock time, so the token must be a
   counter the backend alone advances.
 - **Opaque from the frontend's perspective.** The client parses the integer
@@ -1417,7 +1418,7 @@ where it directly shaped the requirement):
 
 ### 9. Shift product context
 
-- Each shift normally has one responsible admin/owner, and MTM is not a
+- Each shift normally has one responsible admin/owner, and Leader is not a
   real-time collaborative document editor — so a genuine two-writer race on
   the *same* shift field is expected to be **uncommon** in practice.
 - Optimistic concurrency (this whole section) remains required regardless,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_palette.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/forward_chevron.dart';
 import '../../../../l10n/strings.dart';
 import '../../domain/notification_models.dart';
 import '../notification_copy.dart';
@@ -156,16 +157,9 @@ class NotificationRow extends StatelessWidget {
                 ),
                 if (onTap != null && opensDestination) ...[
                   const SizedBox(width: AppSpacing.sm),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    // "Left" here is the forward direction once Directionality
-                    // mirrors it — the convention every navigation row in this
-                    // app already uses.
-                    child: Icon(
-                      Icons.chevron_left_rounded,
-                      size: 18,
-                      color: c.ink3,
-                    ),
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: ForwardChevron(size: 18),
                   ),
                 ],
               ],

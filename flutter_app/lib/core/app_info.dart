@@ -32,18 +32,37 @@ abstract final class AppInfo {
   /// a constant — see `FRONTEND-BACKEND-INTEGRATION.md` §1.
   static const String buildIdentity = '1.0.0+1';
 
+  /// The build half of [buildIdentity] on its own — the `1` in `1.0.0+1`.
+  ///
+  /// **Derived, never declared.** About shows «الإصدار» and «رقم البناء» as
+  /// two lines, and a third constant holding `'1'` would be a third place for
+  /// `pubspec.yaml`'s `version:` to drift away from. Empty when the identity
+  /// carries no `+` suffix, which is a shape the drift test forbids but the
+  /// getter must not crash on.
+  static String get buildNumber {
+    final plus = buildIdentity.indexOf('+');
+    return plus < 0 ? '' : buildIdentity.substring(plus + 1);
+  }
+
   /// Header the API layer will carry the installed [version] in, so the
   /// server can reply `426 Upgrade Required` to any request from a build it
   /// no longer supports. Nothing sends it yet — there is no network layer.
   /// See `FRONTEND-BACKEND-INTEGRATION.md`.
   static const String clientVersionHeader = 'X-Client-Version';
 
-  /// The MTM mark, bundled unmodified.
+  /// The Leader mark for surfaces that draw it without a `WidgetRef` —
+  /// startup, the forced-upgrade screen and About.
   ///
-  /// Byte-identical copy of `assets/images/mtm_logo_full.png` from the legacy
-  /// `medical_team` app — the same artwork MTM already ships under. It is
-  /// deliberately NOT the Android launcher icon: `android/.../mipmap-*` still
-  /// holds the stock Flutter mark, so naming this file after the launcher
-  /// would send whoever replaces that icon to the wrong place.
-  static const String logoAsset = 'assets/brand/mtm_logo_full.png';
+  /// The product **default**, not the user's pick: choosing a mark is a
+  /// preference and these three are either pre-preference (startup), a
+  /// blocked state that must not depend on a stored read (forced upgrade),
+  /// or a statement of what the product is (About). A screen that does have
+  /// the ref — Login — draws `themeStateProvider.logo` instead.
+  ///
+  /// It is also the artwork the Android launcher icon is generated from
+  /// (`mipmap-anydpi-v26/ic_launcher.xml`), which is fixed for everyone.
+  /// The legacy `assets/brand/mtm_logo_full.png` stays bundled but is no
+  /// longer drawn anywhere.
+  static const String logoAsset =
+      'assets/brand/leader_logo_clean_layer.png';
 }

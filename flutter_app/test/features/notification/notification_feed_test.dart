@@ -16,6 +16,7 @@ import 'package:mtm/features/notification/domain/notification_read_store.dart';
 import 'package:mtm/features/notification/domain/notification_repository.dart';
 import 'package:mtm/features/shift/domain/shift_models.dart';
 import 'package:mtm/features/shift/domain/shift_repository.dart';
+import 'package:mtm/features/tenant_feature/data/tenant_feature_providers.dart';
 import 'package:mtm/l10n/strings.dart';
 
 /// The feed as the screen and the badge actually see it: two halves merged,
@@ -120,6 +121,7 @@ Future<({ProviderContainer container, _RecordingReadStore store})> _boot({
   final readStore = store ?? _RecordingReadStore();
   final container = ProviderContainer(overrides: [
     capabilitiesProvider.overrideWithValue(capabilities),
+    tenantFeatureAvailableProvider.overrideWith((ref, key) => true),
     outboxStoreProvider.overrideWithValue(InMemoryOutboxStore(seed: outbox)),
     notificationReadStoreProvider.overrideWithValue(readStore),
     notificationRepositoryProvider

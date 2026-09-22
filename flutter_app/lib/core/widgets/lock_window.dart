@@ -126,28 +126,32 @@ class _LockWindowState extends State<LockWindow>
           children: [
             Icon(icon, size: 18, color: fg),
             const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  caption,
-                  style: TextStyle(
-                    color: fg.withValues(alpha: 0.9),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    height: 1.15,
+            // Loose, so an unbounded parent still gets the natural width;
+            // a narrow one wraps the caption instead of overflowing.
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    caption,
+                    style: TextStyle(
+                      color: fg.withValues(alpha: 0.9),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      height: 1.15,
+                    ),
                   ),
-                ),
-                // The countdown redraws every second, so its digits go
-                // through fixed-width cells — otherwise the chip breathes
-                // as the numbers change. The other two states are words,
-                // which must stay one shaped run.
-                if (widget.state == LockWindowState.open)
-                  TabularDigits(value, style: valueStyle)
-                else
-                  Text(value, style: valueStyle),
-              ],
+                  // The countdown redraws every second, so its digits go
+                  // through fixed-width cells — otherwise the chip breathes
+                  // as the numbers change. The other two states are words,
+                  // which must stay one shaped run.
+                  if (widget.state == LockWindowState.open)
+                    TabularDigits(value, style: valueStyle)
+                  else
+                    Text(value, style: valueStyle),
+                ],
+              ),
             ),
           ],
         ),

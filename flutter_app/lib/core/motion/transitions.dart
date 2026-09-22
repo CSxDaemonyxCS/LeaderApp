@@ -119,10 +119,12 @@ class TabSwitchTransition extends StatefulWidget {
 
 class _TabSwitchTransitionState extends State<TabSwitchTransition>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(
-    vsync: this,
-    duration: MotionTokens.short,
-  )..addStatusListener(_onStatus);
+  AnimationController? _ctrl;
+
+  AnimationController get _controller => _ctrl ??= AnimationController(
+        vsync: this,
+        duration: MotionTokens.short,
+      )..addStatusListener(_onStatus);
 
   void _onStatus(AnimationStatus status) {
     // Drop the transform/opacity layers — and the outgoing subtree — the
@@ -147,7 +149,12 @@ class _TabSwitchTransitionState extends State<TabSwitchTransition>
     final spec = motionSpec(context);
     if (spec.isInstant) {
       _outgoing = null;
-      _ctrl.value = 1;
+      // Do not create an animation controller for an experience that never
+      // animates. If one exists because the motion level changed at runtime,
+      // finish it immediately.
+      _ctrl
+        ?..stop()
+        ..value = 1;
       return;
     }
 
@@ -161,14 +168,18 @@ class _TabSwitchTransitionState extends State<TabSwitchTransition>
     _enterSign = destinationIsRight ? 1.0 : -1.0;
 
     _outgoing = spec.crossFadeOutgoing ? old.child : null;
-    _ctrl
+    _controller
       ..duration = effectiveDuration(context, MotionTokens.short)
       ..forward(from: 0);
   }
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    // The lowest-performance/reduced-motion path may never have needed a
+    // controller. Reading a `late` controller here used to create one while
+    // the element was already deactivated, which is not a safe time to look
+    // up TickerMode.
+    _ctrl?.dispose();
     super.dispose();
   }
 
@@ -176,16 +187,18 @@ class _TabSwitchTransitionState extends State<TabSwitchTransition>
   Widget build(BuildContext context) {
     final spec = motionSpec(context);
     // Steady state: no transform layer, no opacity layer, no cost.
-    if (spec.isInstant || !_ctrl.isAnimating) return widget.child;
+    if (spec.isInstant) return widget.child;
+    final controller = _controller;
+    if (!controller.isAnimating) return widget.child;
 
     final travel = MotionTokens.tabSwitchTravel * spec.intensity;
     final outgoing = _outgoing;
 
     return AnimatedBuilder(
-      animation: _ctrl,
+      animation: controller,
       child: widget.child,
       builder: (context, child) {
-        final t = MotionTokens.enter.transform(_ctrl.value);
+        final t = MotionTokens.enter.transform(controller.value);
         final incoming = Opacity(
           opacity: t,
           child: Transform.translate(

@@ -5,22 +5,33 @@ import '../domain/team_models.dart';
 import '../domain/team_repository.dart';
 
 /// In-memory roster. Every detachment seeded in `MockDetachmentRepository`
-/// has members here except the archived one, so per-detachment isolation is
-/// visible on every list.
+/// has members here, the archived one included — its roster is what the
+/// archive's Team tab reads back.
+///
+/// **This is the current roster, not a snapshot.** There is no per-detachment
+/// membership history in this domain: `listForDetachment` answers with who is
+/// on the roster now, and a member removed from an archived detachment simply
+/// stops appearing in its history. The archive's Team tab says so on screen
+/// rather than implying a snapshot it does not have.
 ///
 /// The list is mutable and survives for the life of the process, so an add,
 /// an edit, and a delete all persist across navigation the way they will
 /// against the real backend.
 class MockTeamRepository implements TeamRepository {
-  MockTeamRepository();
+  /// [members] replaces the seeded roster — the Customer Demo workspace
+  /// passes its own, and a test can pass an empty one.
+  MockTeamRepository({List<TeamMember>? members})
+      : _members = List.of(members ?? _defaultMembers());
 
   final _rand = Random(21);
 
   /// Feeds the ids of members created at runtime. Seeded past the highest
   /// seeded id so a new member can never collide with one below.
-  int _nextId = 26;
+  int _nextId = 30;
 
-  final List<TeamMember> _members = [
+  final List<TeamMember> _members;
+
+  static List<TeamMember> _defaultMembers() => [
     // ---- d_dam_central (10) ----
     TeamMember(
         id: 'm1',
@@ -261,7 +272,50 @@ class MockTeamRepository implements TeamRepository {
         detachmentId: 'd_coast',
         attendance: AttendanceState.checkedIn),
 
-    // d_north_arch is archived and deliberately has no roster.
+    // ---- d_north_arch (4) ----
+    // The archived detachment carries a real roster on purpose: an archive
+    // whose every tab is empty cannot be reviewed, and "what happened here"
+    // is the question Point 13 exists to answer. Their attendance is left at
+    // the state their last shift ended in — nothing about a finished
+    // detachment is live.
+    TeamMember(
+        id: 'm26',
+        name: 'خالد العمر',
+        initials: TeamMember.initialsOf('خالد العمر'),
+        department: 'الإسعاف',
+        personalNumber: '501',
+        role: TeamRole.shiftSupervisor,
+        detachmentId: 'd_north_arch',
+        attendance: AttendanceState.checkedOut,
+        phoneMasked: '+963 9xx xx xx 71'),
+    TeamMember(
+        id: 'm27',
+        name: 'سلمى الأحمد',
+        initials: TeamMember.initialsOf('سلمى الأحمد'),
+        department: 'الإسعاف',
+        personalNumber: '502',
+        role: TeamRole.administrator,
+        detachmentId: 'd_north_arch',
+        attendance: AttendanceState.checkedOut,
+        phoneMasked: '+963 9xx xx xx 33'),
+    TeamMember(
+        id: 'm28',
+        name: 'وسيم قدور',
+        initials: TeamMember.initialsOf('وسيم قدور'),
+        department: 'الإسناد اللوجستي',
+        personalNumber: '503',
+        role: TeamRole.member,
+        detachmentId: 'd_north_arch',
+        attendance: AttendanceState.absent),
+    TeamMember(
+        id: 'm29',
+        name: 'هبة الشيخ',
+        initials: TeamMember.initialsOf('هبة الشيخ'),
+        department: 'الاتصالات',
+        personalNumber: '504',
+        role: TeamRole.member,
+        detachmentId: 'd_north_arch',
+        attendance: AttendanceState.checkedOut),
   ];
 
   Future<void> _latency() => Future<void>.delayed(

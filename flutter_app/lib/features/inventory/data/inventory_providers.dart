@@ -1,12 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../demo/data/demo_workspace.dart';
 import '../../../core/result/result.dart';
 import '../domain/inventory_models.dart';
 import '../domain/inventory_repository.dart';
 import 'mock_inventory_repository.dart';
 
 final inventoryRepositoryProvider = Provider<InventoryRepository>((ref) {
-  return MockInventoryRepository();
+  return ref.watch(demoWorkspaceProvider)?.inventory ??
+      MockInventoryRepository();
 });
 
 final inventoryListProvider = FutureProvider.autoDispose

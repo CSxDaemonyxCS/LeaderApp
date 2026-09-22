@@ -6,7 +6,7 @@ import 'package:printing/printing.dart';
 
 import '../../../core/access/capability.dart';
 import '../../../core/access/capability_guard.dart';
-import '../../../core/format/app_date.dart';
+import '../../../core/format/app_time.dart';
 import '../../../core/export/attendance_pdf.dart';
 import '../../../core/motion/animated_counter.dart';
 import '../../../core/motion/motion_tokens.dart';
@@ -14,6 +14,7 @@ import '../../../core/motion/press_scale.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/widgets/app_meta.dart';
 import '../../../core/widgets/async_result.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../l10n/strings.dart';
@@ -198,7 +199,10 @@ class _Actions extends ConsumerWidget {
         try {
           if (spec.format == ReportFormat.pdf) {
             final bytes = await AttendancePdfBuilder.build(doc);
-            await Printing.sharePdf(bytes: bytes, filename: 'mtm-report.pdf');
+            await Printing.sharePdf(
+              bytes: bytes,
+              filename: 'leader-report.pdf',
+            );
           } else {
             await Clipboard.setData(ClipboardData(text: doc.toCsv()));
           }
@@ -458,12 +462,12 @@ class _Series extends StatelessWidget {
       Row(children: [
         Text(S.highest, style: TextStyle(color: c.ink3, fontSize: 12)),
         const SizedBox(width: 6),
-        Text('${toArabicIndic('$max')}${series.suffix}',
+        Text(series.formatValue(max),
             style: AppTypography.digits(c.ink, size: 13)),
         const SizedBox(width: AppSpacing.lg),
         Text(S.average, style: TextStyle(color: c.ink3, fontSize: 12)),
         const SizedBox(width: 6),
-        Text('${toArabicIndic('${series.average}')}${series.suffix}',
+        Text(series.formatValue(series.average),
             style: AppTypography.digits(c.ink, size: 13)),
       ]),
     ]);
@@ -510,13 +514,18 @@ class ReportHeader extends StatelessWidget {
         Text('${S.reportFor} · ${doc.detachmentName}',
             style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 2),
-        Text(doc.tenantName, style: TextStyle(color: c.ink3, fontSize: 13)),
+        Text(doc.detachmentGroupName,
+            style: TextStyle(color: c.ink3, fontSize: 13)),
         const SizedBox(height: 6),
-        Text(
-          '${S.reportGeneratedAt} ${AppDate.dayMonthTime(doc.generatedAt)}'
-          ' · ${doc.range.label}',
-          style: TextStyle(color: c.ink3, fontSize: 12),
-        ),
+        // Two facts, one line, and no printed mark between them: the
+        // generated-at clock ends in a numeral and a ` · ` beside it is the
+        // Arabic-Indic zero (UI audit P1-11). `AppMeta` draws the rule
+        // outside the text run instead.
+        AppMeta(parts: [
+          AppMetaText('${S.reportGeneratedAt} '
+              '${AppTime.dayTime(doc.generatedAt)}'),
+          AppMetaText(doc.range.label),
+        ]),
       ],
     );
   }

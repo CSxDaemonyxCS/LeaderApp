@@ -51,6 +51,16 @@ class AppTypography {
         fontWeight: FontWeight.w600,
         height: 1.25,
       ),
+      // Material dialogs use headlineSmall for their title. Defining it here
+      // keeps Arabic confirmation copy on the bundled family instead of the
+      // platform fallback (which is absent in widget-test rendering).
+      headlineSmall: TextStyle(
+        fontFamily: family,
+        color: c.ink,
+        fontSize: 20,
+        fontWeight: FontWeight.w600,
+        height: 1.3,
+      ),
       titleLarge: titleLg(c),
       titleMedium: TextStyle(
         fontFamily: family,
@@ -79,6 +89,20 @@ class AppTypography {
         fontSize: 12,
         fontWeight: FontWeight.w500,
         letterSpacing: 0.4,
+      ),
+      // The one slot the theme never filled, and the only route by which a
+      // widget in this app could end up on a font that is not the app's.
+      // Material's `ListTile` uses `labelSmall` for its `trailing` slot, so a
+      // chip or a count placed there inherited Roboto — which renders an
+      // Arabic-Indic digit as a placeholder box wherever Roboto is not
+      // installed. Found on the Platform Operations landing in Phase 2, where
+      // the running-trials count drew as tofu.
+      labelSmall: TextStyle(
+        fontFamily: family,
+        color: c.ink2,
+        fontSize: 11,
+        fontWeight: FontWeight.w500,
+        letterSpacing: 0.5,
       ),
     );
   }
@@ -144,11 +168,15 @@ class AppTypography {
         letterSpacing: letterSpacing,
       );
 
+  /// The small tracked label above a group — the style `SectionHeader`
+  /// paints and the ~55 hand-spelled section labels in the app already used.
+  /// Tracking is 0.6, which is what those call sites wrote; the one earlier
+  /// caller overrode it to 0 and is unaffected.
   static TextStyle eyebrow(AppColors c) => TextStyle(
         fontFamily: family,
         color: c.ink3,
         fontSize: 12,
         fontWeight: FontWeight.w600,
-        letterSpacing: 0.7,
+        letterSpacing: 0.6,
       );
 }

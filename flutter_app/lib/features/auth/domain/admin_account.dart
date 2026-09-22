@@ -7,13 +7,16 @@
 /// and the account screen gates its own controls through the same
 /// `CapabilityGate` / `ref.whenCan` as every other screen.
 ///
-/// **There is no Main Admin flag to read.** `UserRole` was removed on
-/// 2026-09-02 (`CAPABILITIES.md` §0/§1) and `AuthUser` carries no `role`
-/// property — `API_CONTRACT.md` says so in as many words. Presets are a
-/// grant-time convenience, and a live grant "may match no preset at all"
-/// afterwards, so matching one back to a preset name and calling the holder a
-/// Main Admin would be inventing a fact the server never sent. What can be
-/// said truthfully is what the grant contains, and that is what this says.
+/// **This still does not report the account's role.** `AuthUser.role` exists
+/// again as of Point 2 — but it names the *product surface* (platform, or one
+/// SaasTenant), not how much of that surface a grant reaches, and the account
+/// screen reports it as its own separate row read straight off the account.
+/// Nothing here may be derived from it, and nothing here may substitute for
+/// it: presets are a grant-time convenience and a live grant "may match no
+/// preset at all" afterwards, so reading a preset name back out of a grant
+/// and calling the holder a Main Admin would still be inventing a fact the
+/// server never sent. What can be said truthfully about a grant is what it
+/// contains, and that is what this says.
 library;
 
 import '../../../core/access/capability.dart';

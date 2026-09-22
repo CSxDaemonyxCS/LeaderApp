@@ -20,7 +20,7 @@ import '../domain/app_version_models.dart';
 /// app carry *data* — a detachment, a shift, a stock item — so wrapping a
 /// system state in one would be a new idiom, not a reused one. This screen
 /// follows the state pattern and borrows exactly one thing from the card
-/// vocabulary: the bordered `c.surface` row group that `OrgInfoPage` uses
+/// vocabulary: the bordered `c.surface` row group the settings screens use
 /// for label/value pairs, because the two version numbers *are* a label
 /// /value pair.
 ///
@@ -108,8 +108,7 @@ class UpgradeRequiredPage extends ConsumerWidget {
 /// The mark, the name, and a badge saying what kind of state this is.
 ///
 /// The logo is the launcher artwork, drawn unmodified: no recolour, no
-/// redraw, and a single uniform scale inside a square clip that trims the
-/// transport padding baked into the file — nothing is stretched.
+/// redraw, no stretch — a single uniform scale inside a square clip.
 class _Brand extends StatelessWidget {
   const _Brand({required this.failed});
 
@@ -118,9 +117,12 @@ class _Brand extends StatelessWidget {
   static const double _tile = 88;
   static const double _badge = 30;
 
-  /// Uniform zoom that crops the file's white margin. Measured from the
-  /// asset: the icon square starts ~7% in on every side.
-  static const double _trim = 1.16;
+  /// Uniform zoom that used to crop the legacy file's baked-in white
+  /// margin. The Leader mark is exported to its own bounds with transparent
+  /// corners, so there is nothing left to crop — zooming it now would cut
+  /// 8% off the artwork on every side. Kept as a named constant, and not
+  /// inlined away, because the next artwork may need it again.
+  static const double _trim = 1.0;
 
   @override
   Widget build(BuildContext context) {
@@ -174,12 +176,17 @@ class _Wordmark extends StatelessWidget {
     final c = context.c;
     return Column(
       children: [
+        // The tracked wordmark is the Latin name: letter-spacing pulls joined
+        // Arabic letters apart, so the Arabic name sits beneath, untracked.
         Text(
-          S.appName,
+          S.productNameEn,
           style: AppTypography.titleLg(c).copyWith(letterSpacing: 1.5),
         ),
         const SizedBox(height: 2),
-        Text('Medical Teams Management', style: AppTypography.eyebrow(c)),
+        Text(
+          S.productNameAr,
+          style: AppTypography.eyebrow(c).copyWith(letterSpacing: 0),
+        ),
       ],
     );
   }

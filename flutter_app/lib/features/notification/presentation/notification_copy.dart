@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/format/app_date.dart';
-import '../../../core/motion/animated_counter.dart';
+import '../../../core/format/app_number.dart';
+import '../../../core/format/app_time.dart';
 import '../../../l10n/strings.dart';
 import '../domain/notification_models.dart';
 import '../domain/notification_selectors.dart';
@@ -22,6 +22,7 @@ IconData notificationIcon(NotificationKind kind) => switch (kind) {
       NotificationKind.stockDepleted => Icons.inventory_2_outlined,
       NotificationKind.stockLow => Icons.trending_down_rounded,
       NotificationKind.stockExpiring => Icons.event_busy_rounded,
+      NotificationKind.announcement => Icons.campaign_outlined,
     };
 
 String notificationTitle(NotificationKind kind) => switch (kind) {
@@ -33,6 +34,7 @@ String notificationTitle(NotificationKind kind) => switch (kind) {
       NotificationKind.stockDepleted => S.notifStockDepletedTitle,
       NotificationKind.stockLow => S.notifStockLowTitle,
       NotificationKind.stockExpiring => S.notifStockExpiringTitle,
+      NotificationKind.announcement => S.announcementLabel,
     };
 
 /// The one-line detail under the title: what the record is, then what is
@@ -40,27 +42,36 @@ String notificationTitle(NotificationKind kind) => switch (kind) {
 /// name it was built with and the magnitude the selector measured — so a row
 /// never claims a figure the feed did not derive.
 String notificationSubtitle(AppNotification n) {
+  // The one kind whose subtitle is the record rather than a description of it:
+  // an announcement's text *is* its content, so composing it with a canned
+  // detail line would push the words the administrator wrote out of view.
+  if (n.kind == NotificationKind.announcement) {
+    return n.recordLabel ?? S.announcementLabel;
+  }
+
   final detail = switch (n.kind) {
     NotificationKind.syncConflict => S.notifSyncConflictBody,
     NotificationKind.syncFailed => S.notifSyncFailedBody,
-    NotificationKind.shiftUnderstaffed => S.notifShiftUnderstaffedBody
-        .replaceFirst('%d', toArabicIndic(n.count.toString())),
-    NotificationKind.shiftAttendanceMissing => S.notifShiftAttendanceBody
-        .replaceFirst('%d', toArabicIndic(n.count.toString())),
+    NotificationKind.shiftUnderstaffed =>
+      S.notifShiftUnderstaffedBody.replaceFirst('%d', AppNumber.count(n.count)),
+    NotificationKind.shiftAttendanceMissing =>
+      S.notifShiftAttendanceBody.replaceFirst('%d', AppNumber.count(n.count)),
     NotificationKind.shiftStartingSoon =>
-      S.notifShiftSoonBody.replaceFirst('%s', AppDate.time(n.occurredAt)),
+      S.notifShiftSoonBody.replaceFirst('%s', AppTime.time(n.occurredAt)),
     NotificationKind.stockDepleted => S.notifStockDepletedBody,
     NotificationKind.stockLow =>
-      S.notifStockLowBody.replaceFirst('%d', toArabicIndic(n.count.toString())),
+      S.notifStockLowBody.replaceFirst('%d', AppNumber.count(n.count)),
     NotificationKind.stockExpiring => S.notifStockExpiringBody.replaceFirst(
         '%s',
-        AppDate.dayMonth(
+        AppTime.day(
           n.occurredAt,
         )),
+    // Handled above; the announcement never reaches this switch.
+    NotificationKind.announcement => S.announcementLabel,
   };
 
   final label = n.recordLabel;
-  return label == null || label.isEmpty ? detail : '$label · $detail';
+  return label == null || label.isEmpty ? detail : '$label — $detail';
 }
 
 /// The trailing timestamp: a clock time for something on today's page, a date
@@ -70,7 +81,7 @@ String notificationTimeLabel(DateTime occurredAt, DateTime now) {
   final sameDay = occurredAt.year == now.year &&
       occurredAt.month == now.month &&
       occurredAt.day == now.day;
-  return sameDay ? AppDate.time(occurredAt) : AppDate.dayMonth(occurredAt);
+  return sameDay ? AppTime.time(occurredAt) : AppTime.day(occurredAt);
 }
 
 String notificationGroupLabel(NotificationGroup group) => switch (group) {
@@ -84,6 +95,5 @@ String notificationGroupLabel(NotificationGroup group) => switch (group) {
 String unreadNotificationsLabel(int count) => switch (count) {
       0 => S.notificationsNoneUnread,
       1 => S.notificationsUnreadOne,
-      _ => S.notificationsUnreadMany
-          .replaceFirst('%d', toArabicIndic(count.toString())),
+      _ => S.notificationsUnreadMany.replaceFirst('%d', AppNumber.count(count)),
     };

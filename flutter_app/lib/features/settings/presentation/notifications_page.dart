@@ -8,6 +8,8 @@ import '../../../core/widgets/offline_banner.dart';
 import '../../../core/widgets/refresh_indicator.dart';
 import '../../../l10n/strings.dart';
 import '../../shell/main_shell.dart';
+import '../../tenant_feature/data/tenant_feature_providers.dart';
+import '../../tenant_feature/domain/tenant_feature_models.dart';
 import '../data/settings_providers.dart';
 import '../domain/settings_models.dart';
 
@@ -26,6 +28,12 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage> {
   @override
   Widget build(BuildContext context) {
     final c = context.c;
+    final inventoryEnabled = ref.watch(
+      tenantFeatureAvailableProvider(TenantFeatureKey.inventory),
+    );
+    final workshopsEnabled = ref.watch(
+      tenantFeatureAvailableProvider(TenantFeatureKey.workshops),
+    );
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(title: const Text(S.settingsNotifications)),
@@ -55,53 +63,66 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage> {
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: Column(children: [
-                    _NotificationRow(
-                      title: S.notifShiftReminders,
-                      subtitle: S.notifShiftRemindersSub,
-                      value: prefs.shiftReminders,
-                      enabled: _updating.isEmpty,
-                      onChanged: (value) => _update(
-                        prefs,
-                        _NotificationKind.shifts,
-                        value,
+                    for (final (i, row) in [
+                      _NotificationRow(
+                        key: const Key('notif-pref-shifts'),
+                        title: S.notifShiftReminders,
+                        subtitle: S.notifShiftRemindersSub,
+                        value: prefs.shiftReminders,
+                        enabled: _updating.isEmpty,
+                        onChanged: (value) => _update(
+                          prefs,
+                          _NotificationKind.shifts,
+                          value,
+                        ),
                       ),
-                    ),
-                    Divider(height: 1, color: c.line),
-                    _NotificationRow(
-                      title: S.notifStockAlerts,
-                      subtitle: S.notifStockAlertsSub,
-                      value: prefs.stockAlerts,
-                      enabled: _updating.isEmpty,
-                      onChanged: (value) => _update(
-                        prefs,
-                        _NotificationKind.stock,
-                        value,
+                      // A module the organisation does not have raises no
+                      // notification, so its preference is not offered: a
+                      // switch that governs nothing is a dead control. The
+                      // stored value is untouched and returns with the
+                      // module (Point 16).
+                      if (inventoryEnabled)
+                        _NotificationRow(
+                          key: const Key('notif-pref-stock'),
+                          title: S.notifStockAlerts,
+                          subtitle: S.notifStockAlertsSub,
+                          value: prefs.stockAlerts,
+                          enabled: _updating.isEmpty,
+                          onChanged: (value) => _update(
+                            prefs,
+                            _NotificationKind.stock,
+                            value,
+                          ),
+                        ),
+                      if (workshopsEnabled)
+                        _NotificationRow(
+                          key: const Key('notif-pref-workshops'),
+                          title: S.notifWorkshopUpdates,
+                          subtitle: S.notifWorkshopUpdatesSub,
+                          value: prefs.workshopUpdates,
+                          enabled: _updating.isEmpty,
+                          onChanged: (value) => _update(
+                            prefs,
+                            _NotificationKind.workshops,
+                            value,
+                          ),
+                        ),
+                      _NotificationRow(
+                        key: const Key('notif-pref-joins'),
+                        title: S.notifJoinRequests,
+                        subtitle: S.notifJoinRequestsSub,
+                        value: prefs.joinRequests,
+                        enabled: _updating.isEmpty,
+                        onChanged: (value) => _update(
+                          prefs,
+                          _NotificationKind.joins,
+                          value,
+                        ),
                       ),
-                    ),
-                    Divider(height: 1, color: c.line),
-                    _NotificationRow(
-                      title: S.notifWorkshopUpdates,
-                      subtitle: S.notifWorkshopUpdatesSub,
-                      value: prefs.workshopUpdates,
-                      enabled: _updating.isEmpty,
-                      onChanged: (value) => _update(
-                        prefs,
-                        _NotificationKind.workshops,
-                        value,
-                      ),
-                    ),
-                    Divider(height: 1, color: c.line),
-                    _NotificationRow(
-                      title: S.notifJoinRequests,
-                      subtitle: S.notifJoinRequestsSub,
-                      value: prefs.joinRequests,
-                      enabled: _updating.isEmpty,
-                      onChanged: (value) => _update(
-                        prefs,
-                        _NotificationKind.joins,
-                        value,
-                      ),
-                    ),
+                    ].indexed) ...[
+                      if (i > 0) Divider(height: 1, color: c.line),
+                      row,
+                    ],
                   ]),
                 ),
               ],
@@ -143,6 +164,7 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage> {
 
 class _NotificationRow extends StatelessWidget {
   const _NotificationRow({
+    super.key,
     required this.title,
     required this.subtitle,
     required this.value,

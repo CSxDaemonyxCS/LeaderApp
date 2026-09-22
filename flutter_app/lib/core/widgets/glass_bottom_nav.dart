@@ -100,6 +100,11 @@ class GlassBottomNav extends StatelessWidget {
         children: [
           for (int i = 0; i < destinations.length; i++)
             Expanded(
+              // The selected destination owns the only visible label. Giving
+              // it one extra share keeps Arabic copy reachable when Point 8
+              // removes a module and the destination count changes at run
+              // time; the inactive icon-only tabs remain equal.
+              flex: currentIndex == i ? 2 : 1,
               child: _GlassTab(
                 destination: destinations[i],
                 active: currentIndex == i,
@@ -168,77 +173,95 @@ class _GlassTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.c;
-    return PressScale(
+    // The visual label belongs only to the selected pill, but every
+    // destination must keep its name and selection state in the accessibility
+    // tree. Excluding the painted subtree prevents the visible label and icon
+    // from being announced a second time.
+    return Semantics(
+      button: true,
+      selected: active,
+      label: destination.label,
       onTap: onTap,
-      borderRadius: BorderRadius.circular(AppRadii.pill),
-      child: AnimatedContainer(
-        duration: effectiveDuration(context, MotionTokens.navPillMorph),
-        curve: effectiveSpring(context),
-        height: 42,
-        padding: EdgeInsets.symmetric(
-          horizontal: active ? 12 : 8,
-          vertical: 0,
-        ),
-        decoration: BoxDecoration(
-          color: active ? c.primary : Colors.transparent,
+      child: ExcludeSemantics(
+        child: PressScale(
+          onTap: onTap,
           borderRadius: BorderRadius.circular(AppRadii.pill),
-          // The shadow stays in the decoration in BOTH states and only its
-          // colour fades. `MotionTokens.spring` overshoots past its endpoint
-          // by design, and a blur radius has a hard floor at 0 — animating
-          // this list to `null` makes the deselecting tab lerp its blur
-          // through a negative value, which `dart:ui` asserts on. A constant
-          // blur with a transparent colour looks identical and cannot.
-          boxShadow: [
-            BoxShadow(
-              color: active
-                  ? c.primary.withValues(alpha: 0.55)
-                  : c.primary.withValues(alpha: 0),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-              spreadRadius: -2,
+          child: AnimatedContainer(
+            duration: effectiveDuration(context, MotionTokens.navPillMorph),
+            curve: effectiveSpring(context),
+            height: 42,
+            padding: EdgeInsets.symmetric(
+              horizontal: active ? 12 : 8,
+              vertical: 0,
             ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              destination.icon,
-              size: 20,
-              color: active ? c.primaryInk : c.ink2,
+            decoration: BoxDecoration(
+              color: active ? c.primary : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppRadii.pill),
+              // The shadow stays in the decoration in BOTH states and only its
+              // colour fades. `MotionTokens.spring` overshoots past its endpoint
+              // by design, and a blur radius has a hard floor at 0 — animating
+              // this list to `null` makes the deselecting tab lerp its blur
+              // through a negative value, which `dart:ui` asserts on. A constant
+              // blur with a transparent colour looks identical and cannot.
+              boxShadow: [
+                BoxShadow(
+                  color: active
+                      ? c.primary.withValues(alpha: 0.55)
+                      : c.primary.withValues(alpha: 0),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                  spreadRadius: -2,
+                ),
+              ],
             ),
-            ClipRect(
-              child: AnimatedAlign(
-                duration: effectiveDuration(context, MotionTokens.navPillMorph),
-                // Same floor problem as the shadow above: a width factor
-                // cannot go below 0. The reveal keeps the spring, because
-                // that overshoot is the pill's signature; the hide uses the
-                // non-overshooting curve so it cannot land on a negative
-                // width and assert.
-                curve:
-                    active ? effectiveSpring(context) : MotionTokens.emphasized,
-                widthFactor: active ? 1.0 : 0.0,
-                alignment: AlignmentDirectional.centerStart,
-                child: Padding(
-                  padding: const EdgeInsetsDirectional.only(start: 6),
-                  child: AnimatedOpacity(
-                    duration: effectiveDuration(context, MotionTokens.short),
-                    opacity: active ? 1 : 0,
-                    child: Text(
-                      destination.label,
-                      style: TextStyle(
-                        color: c.primaryInk,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  destination.icon,
+                  size: 20,
+                  color: active ? c.primaryInk : c.ink2,
+                ),
+                Flexible(
+                  child: ClipRect(
+                    child: AnimatedAlign(
+                      duration:
+                          effectiveDuration(context, MotionTokens.navPillMorph),
+                      // Same floor problem as the shadow above: a width factor
+                      // cannot go below 0. The reveal keeps the spring, because
+                      // that overshoot is the pill's signature; the hide uses the
+                      // non-overshooting curve so it cannot land on a negative
+                      // width and assert.
+                      curve: active
+                          ? effectiveSpring(context)
+                          : MotionTokens.emphasized,
+                      widthFactor: active ? 1.0 : 0.0,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Padding(
+                        padding: const EdgeInsetsDirectional.only(start: 6),
+                        child: AnimatedOpacity(
+                          duration:
+                              effectiveDuration(context, MotionTokens.short),
+                          opacity: active ? 1 : 0,
+                          child: Text(
+                            destination.label,
+                            style: TextStyle(
+                              color: c.primaryInk,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                       ),
-                      maxLines: 1,
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

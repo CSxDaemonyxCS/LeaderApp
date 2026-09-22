@@ -84,10 +84,11 @@ class ProblemView {
 /// fallback for everything this build does not recognise.
 ///
 /// This is the whole of Core's problem knowledge, and it is bounded: the
-/// app-wide conditions every feature shares (upgrade, auth, permission,
-/// connectivity, server) and nothing else. It is a plain `switch`, not a
-/// registry, because the set does not grow with the product — a new
-/// detachment, inventory or workshop error is **not** added here.
+/// app-wide conditions every feature shares (upgrade, auth, permission, the
+/// tenant-wide feature and plan-limit refusals, connectivity, server) and
+/// nothing else. It is a plain `switch`, not a registry, because the set does
+/// not grow with the product — a new detachment, inventory or workshop error
+/// is **not** added here.
 ///
 /// Domain problems stay with their feature: a feature reads `problem.code`
 /// at its own `Result`/`Problem` call site, maps its own codes (including
@@ -113,6 +114,20 @@ ProblemView resolveProblem(Problem problem) {
     case ProblemCode.notPermitted:
       return _view(problem, S.errNotPermittedTitle, S.errNotPermitted,
           ProblemSurface.inline,
+          retryable: false);
+
+    // The two tenant-wide refusals that are *not* this account's permission.
+    // Each has its own sentence so an administrator is never told "you lack
+    // permission" for something no grant could fix (Point 16). Neither is
+    // retryable: re-sending the same request meets the same answer.
+    case ProblemCode.featureDisabled:
+      return _view(problem, S.errFeatureDisabledTitle, S.errFeatureDisabled,
+          ProblemSurface.inline,
+          retryable: false);
+
+    case ProblemCode.planLimitReached:
+      return _view(
+          problem, S.errPlanLimitTitle, S.errPlanLimit, ProblemSurface.inline,
           retryable: false);
 
     case ProblemCode.notFound:

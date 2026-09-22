@@ -1,6 +1,6 @@
-# MTM Front-Back — Claude working guide
+# Leader Front-Back — Claude working guide
 
-This repository contains the Flutter frontend for Medical Teams Management. Work within the existing application; do not replace it with a web, React, React Native, Swift, or new-package implementation.
+This repository contains the Flutter frontend for Leader / ليدر. Work within the existing application; do not replace it with a web, React, React Native, Swift, or new-package implementation.
 
 ## First reads for frontend and visual work
 
@@ -19,16 +19,22 @@ This repository contains the Flutter frontend for Medical Teams Management. Work
 - Respect `MediaQuery.disableAnimations` and accessible navigation. Motion must clarify an interaction, never delay it.
 - Keep changes small, focused, and consistent with the existing design language. Verify with the relevant Flutter checks when the requested work includes code changes.
 
+## Brand
+
+- The product is **Leader / ليدر** (formerly MTM). Read the name from `S.productNameAr` / `S.productNameEn` in `lib/l10n/strings.dart`; never add a brand literal. Android id is `com.leader.teams`.
+- `MTM` stays only in protocol/compatibility identifiers — Dart package `mtm`, persisted `mtm.*` keys, `MTM_*` env keys, Team Code prefix, plan ids, the `mtm/display` channel. Do not rename those for branding. See HANDOFF.md "LEADER REBRAND — PHASE 1".
+
 ## Theme system
 
 - All colour lives in `flutter_app/lib/core/theme/app_palette.dart` as `AppColors` token sets. Read tokens via `context.c` (e.g. `context.c.surface`); never hard-code a colour, radius, or spacing value.
-- Six palettes: `PaletteId { medical, slate, copper, clay, indigo, teal }`. **`medical`** (clinical green on white) is the default. Each has a full light + dark `AppColors` const; `AppColors.resolve(id, brightness)` picks one.
+- Six palettes: `PaletteId { medical, slate, copper, clay, indigo, teal }`. Each has a full light + dark `AppColors` const; `AppColors.resolve(id, brightness)` picks one.
+- **The product offers all six palettes.** `core/theme/theme_choice.dart` maps `AppThemeChoice { medical, slate, copper, clay, indigo, teal }` one-to-one onto the palette engine. Appearance is a separate axis: every palette supports Light, Dark and System. The historical default is Medical + Light. The temporary `darkCyber` / `purpleArena` / `light` names remain source-compatibility aliases only.
 - **Eye-protect mode** is orthogonal to the palette and to light/dark: `ThemeState.eyeProtect` (bool) makes `AppTheme.light/dark` run the resolved palette through `AppColors.warmed()`. That wash moves the **ground only** — bg, surfaces, hairlines, status tints — and never the ink, the primary or a semantic colour, because warming a foreground is what costs contrast where text is read. Do not model it as a palette.
 - `ThemeState` lives in `core/theme/theme_state.dart` (its own file because `SettingsRepository` persists that shape). `ThemeController` is an `AsyncNotifier` that hydrates from `SettingsRepository.themePrefs()` and writes back on every change. **Read the theme with `themeStateProvider`**, which serves `ThemeState.initial()` until the stored value lands; only call `.notifier` to change it.
-- The shipped `MockSettingsRepository` stores theme preferences only for the lifetime of that repository object. The controller/repository seam is complete, but there is no durable device-relaunch persistence until a concrete repository writes `ThemeState.toJson()` to local storage or the backend. Tests that create a fresh provider container deliberately reuse one repository instance.
-- Settings exposes light, dark and `ThemeMode.system`. Every palette pill includes a preview swatch resolved for the brightness currently on screen, and `_ChoicePill` owns its selected/button/tap semantics.
+- The shipped `MockSettingsRepository` durably stores `ThemeState.toJson()` under `mtm.settings.theme` through the existing `LocalStore`. Unknown/corrupt values fall back safely without clearing unrelated preferences; names, never enum indices, are persisted.
+- Settings has one canonical appearance screen, `/more/themes` (`ThemesAndPerformancePage`): six palette cards, the only user-facing Eye Protection control, Appearance (Light/Dark/System), performance quality, then frame rate. `/more/performance` and the legacy `/more/eye-protect` path redirect to it; the platform legacy path does the same. Eye Protection remains independent persisted state. `ThemeChoiceCard` previews the current appearance from resolved tokens, and `ChoicePill` owns its selected/button/tap semantics.
 - **Contrast is enforced by test**, not by eye: `test/core/theme/palette_contrast_test.dart` holds every palette to floors derived from the original `slate`/`copper`/`clay` tokens, requires the later palettes (`medical`/`indigo`/`teal`) to clear WCAG AA on the filled-button label, and bounds what eye-protect may cost. Run it after touching any hex value.
-- Adding a palette: add the enum value, a light + dark `AppColors` const, a `resolve` switch arm, and a pill in the settings loop. `tenant_flow_smoke_test.dart` covers "every palette builds"; the contrast test covers "every palette is legible" — expect it to fail first and tune the hex until it passes.
+- Adding a palette: add the enum value, a light + dark `AppColors` const, a `resolve` switch arm, and an `AppThemeChoice.ofPalette` arm. It only reaches users if a theme in `themeChoices` maps to it. `detachment_group_flow_smoke_test.dart` covers "every palette builds"; the contrast test covers "every palette is legible" — expect it to fail first and tune the hex until it passes.
 
 ## Available frontend/design skills
 

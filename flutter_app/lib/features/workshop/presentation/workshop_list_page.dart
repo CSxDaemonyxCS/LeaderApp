@@ -4,16 +4,17 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/access/capability.dart';
 import '../../../core/access/capability_guard.dart';
-import '../../../core/format/app_date.dart';
 import '../../../core/motion/animated_counter.dart';
-import '../../../core/motion/motion_tokens.dart';
 import '../../../core/motion/press_scale.dart';
 import '../../../core/motion/stagger.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/time/clock.dart';
 import '../../../core/widgets/async_result.dart';
+import '../../../core/widgets/app_meta.dart';
 import '../../../core/widgets/empty_state.dart';
+import '../../../core/widgets/filter_chips.dart';
 import '../../../core/widgets/refresh_indicator.dart';
 import '../../../core/widgets/status_chip.dart';
 import '../../../l10n/strings.dart';
@@ -23,7 +24,7 @@ import '../domain/workshop_models.dart';
 
 /// Workshops are organisation-level: they carry no detachment id, so nothing
 /// on this screen is scoped and `workshop.create` is checked globally.
-enum _Bucket { all, upcoming, past }
+enum _Bucket { all, upcoming, past, archived }
 
 class WorkshopListPage extends ConsumerStatefulWidget {
   const WorkshopListPage({super.key});
@@ -52,6 +53,7 @@ class _WorkshopListPageState extends ConsumerState<WorkshopListPage> {
         title: const Text(S.workshopsTitle),
         actions: [
           IconButton(
+            tooltip: S.createWorkshop,
             icon: const Icon(Icons.add_rounded),
             onPressed: ref.whenCan(
               Cap.workshopCreate,
@@ -74,25 +76,31 @@ class _WorkshopListPageState extends ConsumerState<WorkshopListPage> {
               ),
             ),
             const SizedBox(height: AppSpacing.sm),
-            Row(children: [
-              _Filter(
-                label: S.filterAll,
-                active: _bucket == _Bucket.all,
-                onTap: () => setState(() => _bucket = _Bucket.all),
-              ),
-              const SizedBox(width: 8),
-              _Filter(
-                label: S.filterUpcoming,
-                active: _bucket == _Bucket.upcoming,
-                onTap: () => setState(() => _bucket = _Bucket.upcoming),
-              ),
-              const SizedBox(width: 8),
-              _Filter(
-                label: S.filterPast,
-                active: _bucket == _Bucket.past,
-                onTap: () => setState(() => _bucket = _Bucket.past),
-              ),
-            ]),
+            AppFilterBar(
+              semanticLabel: S.filterByStatus,
+              children: [
+                AppFilterChip(
+                  label: S.filterAll,
+                  selected: _bucket == _Bucket.all,
+                  onSelected: (_) => setState(() => _bucket = _Bucket.all),
+                ),
+                AppFilterChip(
+                  label: S.filterUpcoming,
+                  selected: _bucket == _Bucket.upcoming,
+                  onSelected: (_) => setState(() => _bucket = _Bucket.upcoming),
+                ),
+                AppFilterChip(
+                  label: S.filterPast,
+                  selected: _bucket == _Bucket.past,
+                  onSelected: (_) => setState(() => _bucket = _Bucket.past),
+                ),
+                AppFilterChip(
+                  label: S.filterArchived,
+                  selected: _bucket == _Bucket.archived,
+                  onSelected: (_) => setState(() => _bucket = _Bucket.archived),
+                ),
+              ],
+            ),
           ]),
         ),
         Expanded(
@@ -101,7 +109,8 @@ class _WorkshopListPageState extends ConsumerState<WorkshopListPage> {
             child: AsyncResultView<List<Workshop>>(
               value: ref.watch(workshopListProvider),
               onRetry: () => ref.invalidate(workshopListProvider),
-              builder: (context, all, stale) => _list(_apply(all)),
+              builder: (context, all, stale) =>
+                  _list(_apply(all, ref.watch(clockProvider)())),
             ),
           ),
         ),
@@ -111,13 +120,17 @@ class _WorkshopListPageState extends ConsumerState<WorkshopListPage> {
 
   /// Search and bucket filtering happen on the client because the whole list
   /// is small; the repository takes no query parameters.
-  List<Workshop> _apply(List<Workshop> all) {
-    final now = DateTime.now();
-    Iterable<Workshop> out = all;
-    out = switch (_bucket) {
-      _Bucket.all => out,
-      _Bucket.upcoming => out.where((w) => w.at.isAfter(now)),
-      _Bucket.past => out.where((w) => !w.at.isAfter(now)),
+  ///
+  /// An archived workshop appears only under its own filter: it is finished
+  /// business, and leaving it in "all" would make the list read as the work
+  /// still in hand plus everything that ever was.
+  List<Workshop> _apply(List<Workshop> all, DateTime now) {
+    final live = all.where((w) => !w.archived);
+    Iterable<Workshop> out = switch (_bucket) {
+      _Bucket.all => live,
+      _Bucket.upcoming => live.where((w) => w.at.isAfter(now)),
+      _Bucket.past => live.where((w) => !w.at.isAfter(now)),
+      _Bucket.archived => all.where((w) => w.archived),
     };
     final q = _query.trim();
     if (q.isNotEmpty) {
@@ -128,6 +141,13 @@ class _WorkshopListPageState extends ConsumerState<WorkshopListPage> {
 
   Widget _list(List<Workshop> items) {
     if (items.isEmpty) {
+      if (_bucket == _Bucket.archived) {
+        return const EmptyState(
+          icon: Icons.inventory_2_outlined,
+          title: S.emptyArchive,
+          body: S.archiveHint,
+        );
+      }
       return EmptyState(
         icon: Icons.school_outlined,
         title: S.emptyWorkshops,
@@ -147,44 +167,6 @@ class _WorkshopListPageState extends ConsumerState<WorkshopListPage> {
         itemBuilder: (context, i) => Stagger(
           index: i,
           child: WorkshopCard(workshop: items[i]),
-        ),
-      ),
-    );
-  }
-}
-
-class _Filter extends StatelessWidget {
-  const _Filter({
-    required this.label,
-    required this.active,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.c;
-    return PressScale(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: effectiveDuration(context, MotionTokens.short),
-        padding:
-            const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 6),
-        decoration: BoxDecoration(
-          color: active ? c.primary : c.surface,
-          border: Border.all(color: active ? c.primary : c.line2),
-          borderRadius: BorderRadius.circular(AppRadii.pill),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: active ? c.primaryInk : c.ink2,
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-          ),
         ),
       ),
     );
@@ -251,37 +233,47 @@ class WorkshopCard extends StatelessWidget {
                             style: t.titleMedium,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis),
-                        Text('${AppDate.dayMonthTime(w.at)} · ${w.location}',
-                            style: TextStyle(color: c.ink3, fontSize: 12),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis),
+                        AppMeta(parts: [
+                          AppMetaText.dayTime(w.at),
+                          AppMetaText(w.location),
+                        ]),
                       ],
                     ),
                   ),
                   StatusChip(
-                    kind: workshopStatusKind(w.status),
-                    label: workshopStatusLabel(w.status),
+                    kind: w.archived
+                        ? StatusKind.muted
+                        : workshopStatusKind(w.status),
+                    label: w.archived
+                        ? S.statusArchived
+                        : workshopStatusLabel(w.status),
                   ),
                 ]),
                 const SizedBox(height: AppSpacing.md),
-                Row(children: [
-                  _mini(
-                      context,
-                      S.registeredMembers,
-                      '${toArabicIndic(w.registered.toString())}'
-                      '/${toArabicIndic(w.capacity.toString())}'),
-                  const SizedBox(width: AppSpacing.lg),
-                  _mini(context, S.guests, toArabicIndic(w.guests.toString())),
-                  const Spacer(),
-                  if (w.isFull)
-                    const StatusChip(kind: StatusKind.warn, label: S.full)
-                  else
-                    Text(
-                      '${toArabicIndic(seatsLeft.toString())} '
-                      '${S.workshopSeatsLeft}',
-                      style: TextStyle(color: c.ink3, fontSize: 12),
-                    ),
-                ]),
+                // Wraps rather than sits on one line: at 320 dp with the text
+                // scaled up, three figures and a chip do not fit across.
+                Wrap(
+                  spacing: AppSpacing.lg,
+                  runSpacing: AppSpacing.sm,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _mini(
+                        context,
+                        S.registeredMembers,
+                        '${toArabicIndic(w.registered.toString())}'
+                        '/${toArabicIndic(w.capacity.toString())}'),
+                    _mini(
+                        context, S.guests, toArabicIndic(w.guests.toString())),
+                    if (w.isFull)
+                      const StatusChip(kind: StatusKind.warn, label: S.full)
+                    else
+                      Text(
+                        '${toArabicIndic(seatsLeft.toString())} '
+                        '${S.workshopSeatsLeft}',
+                        style: TextStyle(color: c.ink3, fontSize: 12),
+                      ),
+                  ],
+                ),
               ],
             ),
           ),

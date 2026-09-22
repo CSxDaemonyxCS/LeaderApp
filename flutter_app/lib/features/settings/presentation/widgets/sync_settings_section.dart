@@ -3,12 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/format/app_date.dart';
+import '../../../../core/format/app_time.dart';
 import '../../../../core/motion/animated_counter.dart';
 import '../../../../core/sync/outbox_controller.dart';
 import '../../../../core/sync/sync_coordinator.dart';
 import '../../../../core/sync/sync_overview.dart';
 import '../../../../core/theme/app_palette.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/forward_chevron.dart';
 import '../../../../features/conflict/presentation/needs_review_page.dart';
 import '../../../../l10n/strings.dart';
 
@@ -360,8 +362,11 @@ class _Headline extends StatelessWidget {
 }
 
 /// When a sync last actually got something through. Never a wire timestamp:
-/// `اليوم · ١٩:٣٢` today, `أمس · ١٩:٣٢` yesterday, the day and month before
-/// that.
+/// `اليوم ١٩:٣٢` today, `أمس ١٩:٣٢` yesterday, the day and month before that.
+///
+/// The day and its clock carry no mark between them: a ` · ` beside a time
+/// beginning «٠» is the same glyph as the digit (UI audit P1-11), and the
+/// clock is isolated by [AppTime] so its colon cannot be reordered.
 class _LastSyncLine extends StatelessWidget {
   const _LastSyncLine({required this.lastSyncedAt});
 
@@ -382,7 +387,7 @@ class _LastSyncLine extends StatelessWidget {
     final days = AppDate.daysFromNow(t);
     final day =
         days == 0 || days == -1 ? AppDate.relativeDays(t) : AppDate.dayMonth(t);
-    return '$day · ${AppDate.time(t)}';
+    return '$day ${AppTime.time(t)}';
   }
 }
 
@@ -534,7 +539,7 @@ class _ConflictAttentionRow extends StatelessWidget {
                     ),
                   ),
                 ),
-                Icon(Icons.chevron_left_rounded, size: 18, color: c.warn),
+                ForwardChevron(size: 18, color: c.warn),
               ],
             ),
           ),

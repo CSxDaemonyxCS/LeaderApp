@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/access/capability.dart';
-import '../../../core/access/capability_guard.dart';
 import '../../../core/motion/animated_counter.dart';
 import '../../../core/motion/motion_tokens.dart';
 import '../../../core/motion/press_scale.dart';
@@ -12,10 +11,12 @@ import '../../../core/result/result.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/async_result.dart';
+import '../../../core/widgets/confirmation_dialog.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../l10n/strings.dart';
 import '../../team/data/team_providers.dart';
 import '../../team/domain/team_models.dart';
+import '../data/detachment_providers.dart';
 
 /// Add (`memberId == null`) or edit one member of a detachment.
 ///
@@ -93,15 +94,19 @@ class _DetachmentMemberEditPageState
     // Adding someone to a roster is the invite capability; changing the
     // details of someone already on it is the edit one. Both are scoped to
     // the detachment whose roster this is.
+    //
+    // Both resolve through `DetachmentAccess`, which is also what refuses the
+    // form on a finished detachment: the roster of a detachment that has
+    // ended is a record, and this domain has no historical-correction
+    // workflow to open it with (§8 — reported, not invented).
+    final access = ref.accessIn(widget.detachmentId);
     final onSave = _isNew
-        ? ref.whenCan(Cap.memberInvite, _save,
-            detachmentId: widget.detachmentId)
-        : ref.whenCan(Cap.memberEdit, _save, detachmentId: widget.detachmentId);
+        ? access.when(Cap.memberInvite, _save)
+        : access.when(Cap.memberEdit, _save);
 
     // The role is its own capability, so someone who may correct a spelling
     // is not thereby able to promote a member to detachment lead.
-    final canAssignRole =
-        ref.capabilities.canIn(widget.detachmentId, Cap.memberRoleAssign);
+    final canAssignRole = access.can(Cap.memberRoleAssign);
 
     return Form(
       key: _formKey,
@@ -156,10 +161,9 @@ class _DetachmentMemberEditPageState
           if (existing != null) ...[
             const SizedBox(height: AppSpacing.xl),
             _DeleteRow(
-              onDelete: ref.whenCan(
+              onDelete: access.when(
                 Cap.memberDeactivate,
                 () => _confirmDelete(existing),
-                detachmentId: widget.detachmentId,
               ),
               enabled: !_saving,
             ),
@@ -225,26 +229,18 @@ class _DetachmentMemberEditPageState
   }
 
   Future<void> _confirmDelete(TeamMember member) async {
-    final c = context.c;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppConfirmation(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text(S.deleteMember),
-        content: Text('${member.name}\n\n${S.deleteMemberBody}'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text(S.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(foregroundColor: c.crit),
-            child: const Text(S.delete),
-          ),
-        ],
-      ),
+      title: S.deleteMember,
+      // The member's name on its own line rather than concatenated into the
+      // body with two newlines, which is how it used to be shown.
+      identity: member.name,
+      change: S.deleteMemberBody,
+      unchanged: S.deleteMemberUnchanged,
+      confirmLabel: S.delete,
+      severity: ConfirmationSeverity.destructive,
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     setState(() => _saving = true);
     final result = await ref.read(teamRepositoryProvider).delete(member.id);

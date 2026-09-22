@@ -1,4 +1,5 @@
 import '../motion/animated_counter.dart';
+import '../time/calendar_day.dart';
 
 /// Date and time rendering for an Arabic-first UI.
 ///
@@ -26,8 +27,25 @@ abstract final class AppDate {
   static String dayMonth(DateTime d) =>
       '${toArabicIndic(d.day.toString())} ${_months[d.month - 1]}';
 
-  /// `١٢ أيلول · ١٤:٣٠`
-  static String dayMonthTime(DateTime d) => '${dayMonth(d)} · ${time(d)}';
+  /// `١٢ أيلول ٢٠٢٦`
+  ///
+  /// The year matters wherever a date can be more than a season old — a
+  /// subscriber registered two years ago, a lifecycle event from a previous
+  /// contract term. The tenant app's own screens deal in the current week and
+  /// use [dayMonth]; this is for the records that do not.
+  static String dayMonthYear(DateTime d) =>
+      '${dayMonth(d)} ${toArabicIndic(d.year.toString())}';
+
+  /// `١٢ أيلول ١٤:٣٠`
+  ///
+  /// **No separator between the two.** This joined the day to the clock with
+  /// ` · ` until the closure pass, and that dot lands immediately before a
+  /// time that very often begins with «٠» — the Arabic-Indic zero, which is
+  /// the same mark (UI audit P1-11). A space says exactly the same thing and
+  /// cannot be read as a numeral. [AppTime.dayTime] is this shape for a
+  /// widget, and also isolates the clock; this one stays a plain string
+  /// because the PDF exporter has no isolate support.
+  static String dayMonthTime(DateTime d) => '${dayMonth(d)} ${time(d)}';
 
   /// `١٤:٣٠` — always rendered left-to-right by the caller.
   static String time(DateTime d) =>
@@ -51,6 +69,33 @@ abstract final class AppDate {
   /// `الأحد` from a date.
   static String weekdayOf(DateTime d) => weekdayName(d.weekday);
 
+  /// The conventional one-letter weekday, indexed like [_weekdays]:
+  /// `ن ث ر خ ج س ح`.
+  ///
+  /// **Why a letter and not a prefix.** The schedule's day strip and the
+  /// repeat picker both took `weekdayOf(d).substring(0, 2)` to fit seven
+  /// columns — and *every* Arabic weekday begins «ال», so all seven columns
+  /// drew the same two characters and the row said nothing (found in the
+  /// Phase 3C render review). These are the initials an Arabic calendar
+  /// already uses, they are distinct from each other, and one glyph fits any
+  /// column at any text scale. The full name is never far: the strip's
+  /// selected day is spelled out underneath it.
+  static const List<String> _weekdayInitials = [
+    'ن', // الإثنين
+    'ث', // الثلاثاء
+    'ر', // الأربعاء
+    'خ', // الخميس
+    'ج', // الجمعة
+    'س', // السبت
+    'ح', // الأحد
+  ];
+
+  /// `س` from a `DateTime.weekday` value.
+  static String weekdayInitial(int weekday) => _weekdayInitials[weekday - 1];
+
+  /// `ح` from a date.
+  static String weekdayInitialOf(DateTime d) => weekdayInitial(d.weekday);
+
   /// `٠٨:٣٠` from minutes since midnight. Minutes past 24h wrap, so a night
   /// shift's end reads as `٠٢:٠٠` rather than `٢٦:٠٠`.
   static String hm(int minutes) {
@@ -65,7 +110,7 @@ abstract final class AppDate {
 
   /// `١٢ أيلول – ١٨ أيلول` for a week beginning at [weekStart].
   static String weekRange(DateTime weekStart) => '${dayMonth(weekStart)} – '
-      '${dayMonth(weekStart.add(const Duration(days: 6)))}';
+      '${dayMonth(addDays(weekStart, 6))}';
 
   /// `٠٨:٠٠ – ١٤:٠٠` from two whole hours.
   static String hourRange(int startHour, int endHour) =>
@@ -73,13 +118,11 @@ abstract final class AppDate {
       '${toArabicIndic(endHour.toString().padLeft(2, '0'))}:٠٠';
 
   /// Whole days between now and [d]; negative when [d] is in the past.
-  static int daysFromNow(DateTime d) => DateTime(d.year, d.month, d.day)
-      .difference(DateTime(
-        DateTime.now().year,
-        DateTime.now().month,
-        DateTime.now().day,
-      ))
-      .inDays;
+  ///
+  /// Counted on the calendar: subtracting two local midnights gives 23 or 25
+  /// hours across a daylight-saving change, and `inDays` would then round
+  /// «غدا» down to «اليوم».
+  static int daysFromNow(DateTime d) => calendarDaysBetween(DateTime.now(), d);
 
   /// `قبل ٣ أيام` / `بعد ٤ أيام` / `اليوم`.
   static String relativeDays(DateTime d) {

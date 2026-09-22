@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mtm/features/demo/data/demo_workspace.dart';
 import 'package:mtm/core/access/capability.dart';
 import 'package:mtm/core/access/capability_guard.dart';
 import 'package:mtm/core/motion/animated_counter.dart';
@@ -15,6 +16,7 @@ import 'package:mtm/features/home/presentation/home_page.dart';
 import 'package:mtm/features/notification/data/notification_providers.dart';
 import 'package:mtm/features/notification/domain/notification_models.dart';
 import 'package:mtm/features/notification/domain/notification_repository.dart';
+import 'package:mtm/features/tenant_feature/data/tenant_feature_providers.dart';
 
 /// The dashboard's bell: the app's one entry point into the Notifications
 /// Center, and the badge that must agree with the list behind it.
@@ -24,7 +26,7 @@ const _operator = Capabilities(scoped: {_det: Cap.scoped});
 
 const _detachment = Detachment(
   id: _det,
-  tenantId: 't1',
+  detachmentGroupId: 't1',
   name: 'مفرزة دمشق المركزية',
   region: 'دمشق',
   mainCenter: 'مركز الشعلان',
@@ -55,8 +57,13 @@ List<AppNotification> _rows(int count) => [
         ),
     ];
 
-Future<void> _pump(WidgetTester tester, {required int unread}) async {
-  tester.view.physicalSize = const Size(1080, 2200);
+Future<void> _pump(
+  WidgetTester tester, {
+  required int unread,
+  double textScale = 1,
+  Size size = const Size(1080, 2200),
+}) async {
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 2;
   addTearDown(tester.view.reset);
 
@@ -64,6 +71,11 @@ Future<void> _pump(WidgetTester tester, {required int unread}) async {
     ProviderScope(
       overrides: [
         capabilitiesProvider.overrideWithValue(_operator),
+        // This world holds no Customer Demo session, so the repository
+        // providers serve the ordinary repositories and nothing reaches for
+        // the authentication mock.
+        isCustomerDemoSessionProvider.overrideWith((ref) => false),
+        tenantFeatureAvailableProvider.overrideWith((ref, key) => true),
         dashboardDetachmentsProvider
             .overrideWith((ref) async => const Success([_detachment])),
         homeSummaryProvider.overrideWith(
@@ -84,6 +96,11 @@ Future<void> _pump(WidgetTester tester, {required int unread}) async {
       ],
       child: MaterialApp(
         theme: AppTheme.light(PaletteId.medical),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child ?? const SizedBox.shrink(),
+        ),
         home: const Directionality(
           textDirection: TextDirection.rtl,
           child: HomePage(),
@@ -114,5 +131,30 @@ void main() {
     await _pump(tester, unread: 12);
 
     expect(find.text('${toArabicIndic('9')}+'), findsOneWidget);
+  });
+
+  testWidgets('at 1.6× the badge stops growing before it covers the bell',
+      (tester) async {
+    // The Phase 3C render review found the badge at 320 dp / 1.6× drawn the
+    // full width of the 24 dp icon, so the control no longer looked like a
+    // bell. The count still scales — it is text — but only as far as the
+    // clamp, and the icon it sits on never scales at all.
+    await _pump(tester, unread: 3, size: const Size(640, 2800));
+    final atOne = tester.getSize(find.text(toArabicIndic('3')));
+
+    await _pump(
+      tester,
+      unread: 3,
+      textScale: 1.6,
+      size: const Size(640, 2800),
+    );
+    final atLarge = tester.getSize(find.text(toArabicIndic('3')));
+
+    expect(atLarge.width, greaterThan(atOne.width),
+        reason: 'the count is still text and still scales');
+    expect(atLarge.width, lessThan(atOne.width * 1.6),
+        reason: 'but not by the full 1.6×');
+    expect(atLarge.height, lessThan(24),
+        reason: 'the badge stays smaller than the icon it sits on');
   });
 }

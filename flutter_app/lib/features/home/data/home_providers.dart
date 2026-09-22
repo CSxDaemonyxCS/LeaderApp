@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../demo/data/demo_workspace.dart';
 import '../../../core/result/result.dart';
 import '../../detachment/data/detachment_providers.dart';
 import '../../detachment/domain/detachment_models.dart';
@@ -9,14 +10,21 @@ import '../../team/data/team_providers.dart';
 import '../domain/home_models.dart';
 import '../domain/home_repository.dart';
 import 'mock_home_repository.dart';
+import '../../tenant_feature/data/tenant_feature_providers.dart';
+import '../../tenant_feature/domain/tenant_feature_models.dart';
 
 final homeRepositoryProvider = Provider<HomeRepository>((ref) {
+  final inventoryEnabled = ref.watch(
+    tenantFeatureAvailableProvider(TenantFeatureKey.inventory),
+  );
   // Composed from the same repositories the rest of the app reads, so the
   // dashboard can never show a figure that exists nowhere else.
+  final demo = ref.watch(demoWorkspaceProvider);
+  if (demo != null) return demo.home;
   return MockHomeRepository(
     detachments: ref.watch(detachmentRepositoryProvider),
     shifts: ref.watch(shiftRepositoryProvider),
-    inventory: ref.watch(inventoryRepositoryProvider),
+    inventory: inventoryEnabled ? ref.watch(inventoryRepositoryProvider) : null,
     team: ref.watch(teamRepositoryProvider),
   );
 });

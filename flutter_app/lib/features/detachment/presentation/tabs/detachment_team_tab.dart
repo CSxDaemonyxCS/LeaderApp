@@ -3,12 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/access/capability.dart';
-import '../../../../core/access/capability_guard.dart';
 import '../../../../core/motion/animated_counter.dart';
 import '../../../../core/motion/press_scale.dart';
 import '../../../../core/motion/stagger.dart';
 import '../../../../core/theme/app_palette.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/error_state.dart';
 import '../../../../core/widgets/offline_banner.dart';
@@ -21,6 +21,7 @@ import '../../../shell/main_shell.dart';
 import '../../../team/data/team_providers.dart';
 import '../../../team/domain/member_search.dart';
 import '../../../team/domain/team_models.dart';
+import '../../data/detachment_providers.dart';
 
 /// The detachment's roster: who is on it, and what each of them is.
 ///
@@ -95,20 +96,18 @@ class _DetachmentTeamTabState extends ConsumerState<DetachmentTeamTab> {
   Widget _body(List<TeamMember> members, {bool stale = false}) {
     // Adding is gated, and the gate is the same one the form resolves
     // against — an "add" that opens a page whose save button is dead is
-    // worse than no "add" at all.
-    final onAdd = ref.whenCan(
-      Cap.memberInvite,
-      _openNew,
-      detachmentId: detachmentId,
-    );
+    // worse than no "add" at all. It resolves through `DetachmentAccess`, so
+    // a finished detachment closes it the way a missing grant does.
+    final access = ref.accessIn(detachmentId);
+    final onAdd = access.when(Cap.memberInvite, _openNew);
 
     // An empty roster is a different screen from a search that found
     // nothing: there is nothing to search, so the search bar is not shown.
     if (members.isEmpty) {
       return EmptyState(
         icon: Icons.group_outlined,
-        title: S.emptyTeam,
-        body: S.emptyTeamSub,
+        title: access.isHistorical ? S.historicalEmptyTeam : S.emptyTeam,
+        body: access.isHistorical ? S.historicalEmptyTeamSub : S.emptyTeamSub,
         actionLabel: onAdd == null ? null : S.addMember,
         onAction: onAdd,
       );
@@ -122,6 +121,16 @@ class _DetachmentTeamTabState extends ConsumerState<DetachmentTeamTab> {
     );
 
     return Column(children: [
+      // §9 honesty: `TeamRepository` answers with the roster as it stands
+      // now, not a snapshot taken when the detachment closed. On a finished
+      // detachment that difference matters, so the screen says so instead of
+      // letting the list imply a history it does not have.
+      if (access.isHistorical)
+        const Padding(
+          padding: EdgeInsets.fromLTRB(
+              AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 0),
+          child: _HistoricalRosterNote(),
+        ),
       Padding(
         padding: const EdgeInsets.fromLTRB(
             AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 0),
@@ -284,6 +293,35 @@ String roleLabel(TeamRole role) => switch (role) {
       TeamRole.member => S.roleMember,
     };
 
+/// One quiet line, not a banner: what the roster below actually is.
+class _HistoricalRosterNote extends StatelessWidget {
+  const _HistoricalRosterNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.c;
+    return Container(
+      key: const Key('historical-roster-note'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: c.surface2,
+        borderRadius: BorderRadius.circular(AppRadii.md),
+      ),
+      child: Row(children: [
+        Icon(Icons.history_rounded, size: 16, color: c.ink3),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            S.historicalRosterNote,
+            style: TextStyle(color: c.ink3, fontSize: 12, height: 1.5),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
 class _SearchBar extends StatelessWidget {
   const _SearchBar({
     required this.controller,
@@ -433,12 +471,7 @@ class _FilterGroup extends StatelessWidget {
       children: [
         Text(
           label,
-          style: TextStyle(
-            color: c.ink3,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.6,
-          ),
+          style: AppTypography.eyebrow(c),
         ),
         const SizedBox(height: AppSpacing.sm),
         Wrap(
@@ -497,12 +530,7 @@ class _RosterHeader extends StatelessWidget {
           children: [
             Text(
               label,
-              style: TextStyle(
-                color: c.ink3,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.6,
-              ),
+              style: AppTypography.eyebrow(c),
             ),
             if (stale) const StaleBadge(),
           ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mtm/features/demo/data/demo_workspace.dart';
 import 'package:mtm/core/access/capability.dart';
 import 'package:mtm/core/access/capability_guard.dart';
 import 'package:mtm/core/result/result.dart';
@@ -15,6 +16,7 @@ import 'package:mtm/features/notification/presentation/notifications_center_page
 import 'package:mtm/features/shift/domain/shift_models.dart';
 import 'package:mtm/features/shift/data/shift_providers.dart';
 import 'package:mtm/features/shift/domain/shift_repository.dart';
+import 'package:mtm/features/tenant_feature/data/tenant_feature_providers.dart';
 import 'package:mtm/l10n/strings.dart';
 
 /// The screen states nobody can produce on a device: a notification whose
@@ -27,7 +29,7 @@ const _operator = Capabilities(scoped: {_det: Cap.scoped});
 
 const _detachment = Detachment(
   id: _det,
-  tenantId: 't1',
+  detachmentGroupId: 't1',
   name: 'مفرزة دمشق المركزية',
   region: 'دمشق',
   mainCenter: 'مركز الشعلان',
@@ -92,6 +94,11 @@ Future<_MissingShifts> _pump(
     ProviderScope(
       overrides: [
         capabilitiesProvider.overrideWithValue(_operator),
+        // This world holds no Customer Demo session, so the repository
+        // providers serve the ordinary repositories and nothing reaches for
+        // the authentication mock.
+        isCustomerDemoSessionProvider.overrideWith((ref) => false),
+        tenantFeatureAvailableProvider.overrideWith((ref, key) => true),
         dashboardDetachmentsProvider
             .overrideWith((ref) async => const Success([_detachment])),
         notificationRepositoryProvider.overrideWithValue(_FakeRepository(rows)),

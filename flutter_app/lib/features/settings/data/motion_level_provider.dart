@@ -48,7 +48,13 @@ class MotionLevelController extends AsyncNotifier<MotionLevel> {
   Future<void> set(MotionLevel level) async {
     // Optimistic update — user feedback is immediate.
     state = AsyncValue.data(level);
-    await ref.read(settingsRepositoryProvider).updateMotionLevel(level);
+    try {
+      await ref.read(settingsRepositoryProvider).updateMotionLevel(level);
+    } catch (e) {
+      // A storage failure costs the choice its durability, not its effect:
+      // the level is already applied and stays applied for this session.
+      debugPrint('MotionLevelController: level not stored: $e');
+    }
   }
 }
 

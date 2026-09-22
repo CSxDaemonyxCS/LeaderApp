@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/access/capability.dart';
-import '../../../../core/access/capability_guard.dart';
 import '../../../../core/format/app_date.dart';
+import '../../../../core/format/app_number.dart';
+import '../../../../core/format/app_time.dart';
 import '../../../../core/motion/animated_counter.dart';
 import '../../../../core/motion/motion_tokens.dart';
 import '../../../../core/motion/press_scale.dart';
@@ -12,7 +13,9 @@ import '../../../../core/theme/app_palette.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/async_result.dart';
+import '../../../../core/widgets/app_meta.dart';
 import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/forward_chevron.dart';
 import '../../../../core/widgets/refresh_indicator.dart';
 import '../../../../core/widgets/sheet_scaffold.dart';
 import '../../../../core/widgets/status_chip.dart';
@@ -63,13 +66,38 @@ class DetachmentShiftsTab extends ConsumerWidget {
     final dayOffset = ref.watch(selectedDayOffsetProvider(detachmentId));
     final query = WeekQuery(detachmentId: detachmentId, weekStart: weekStart);
 
-    final canManage = ref.capabilities.canIn(detachmentId, Cap.shiftManage);
-    final canAssign = ref.capabilities.canIn(detachmentId, Cap.shiftAssign);
-    final canRecord =
-        ref.capabilities.canIn(detachmentId, Cap.shiftAttendanceRecord);
-    final canOverride =
-        ref.capabilities.canIn(detachmentId, Cap.shiftAttendanceOverride);
-    final canDelete = ref.capabilities.canIn(detachmentId, Cap.shiftDelete);
+    // One resolver for both halves of the question — "may this session do
+    // it" and "does this detachment still accept it". A finished detachment
+    // answers no to every one of these five, so the bulk actions, the add
+    // control, and every per-shift action below fall away together instead
+    // of one at a time.
+    final access = ref.accessIn(detachmentId);
+    final canManage = access.can(Cap.shiftManage);
+    final canAssign = access.can(Cap.shiftAssign);
+    final canRecord = access.can(Cap.shiftAttendanceRecord);
+    final canOverride = access.can(Cap.shiftAttendanceOverride);
+    final canDelete = access.can(Cap.shiftDelete);
+
+    // A finished detachment opens on the last week it actually worked rather
+    // than on this one, which it never reached. Applied once, and only while
+    // the selection is still the untouched default, so it can never fight a
+    // week the reader has navigated to themselves.
+    if (access.isHistorical) {
+      ref.listen<AsyncValue<DateTime?>>(
+        lastScheduledDayProvider(detachmentId),
+        (_, next) {
+          final day = next.valueOrNull;
+          if (day == null) return;
+          final thisWeek = startOfWeek(DateTime.now());
+          if (ref.read(selectedWeekProvider(detachmentId)) != thisWeek) return;
+          final week = startOfWeek(day);
+          if (week == thisWeek) return;
+          ref.read(selectedWeekProvider(detachmentId).notifier).state = week;
+          ref.read(selectedDayOffsetProvider(detachmentId).notifier).state =
+              day.difference(week).inDays;
+        },
+      );
+    }
 
     return AppRefreshIndicator(
       onRefresh: () => ref.refresh(weekShiftsProvider(query).future),
@@ -81,6 +109,7 @@ class DetachmentShiftsTab extends ConsumerWidget {
           weekStart: weekStart,
           dayOffset: dayOffset,
           shifts: shifts,
+          historical: access.isHistorical,
           canManage: canManage,
           canAssign: canAssign,
           canRecord: canRecord,
@@ -98,6 +127,7 @@ class _Week extends ConsumerWidget {
     required this.weekStart,
     required this.dayOffset,
     required this.shifts,
+    required this.historical,
     required this.canManage,
     required this.canAssign,
     required this.canRecord,
@@ -109,16 +139,21 @@ class _Week extends ConsumerWidget {
   final DateTime weekStart;
   final int dayOffset;
   final List<Shift> shifts;
+
+  /// This detachment has ended, so an empty day is a fact about the past
+  /// rather than a day nobody has staffed yet.
+  final bool historical;
+
   final bool canManage;
   final bool canAssign;
   final bool canRecord;
   final bool canOverride;
   final bool canDelete;
 
-  DateTime get _selectedDay => weekStart.add(Duration(days: dayOffset));
+  DateTime get _selectedDay => addDays(weekStart, dayOffset);
 
   List<Shift> _shiftsOn(int offset) {
-    final day = weekStart.add(Duration(days: offset));
+    final day = addDays(weekStart, offset);
     return shifts.where((s) => s.date == day).toList();
   }
 
@@ -161,6 +196,7 @@ class _Week extends ConsumerWidget {
           const SizedBox(height: AppSpacing.sm),
           if (today.isEmpty)
             _EmptyDay(
+              historical: historical,
               onAdd: canManage
                   ? () => _addShift(context, ref, _selectedDay)
                   : null,
@@ -251,11 +287,13 @@ class _DaySelector extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(children: [
-          // In RTL the "previous" arrow points right, which is what
-          // `chevron_right` renders as after the layout mirrors it.
+          // Both rounded chevrons mirror under RTL, so `earlier` is
+          // `chevron_left` and paints to the *right* in Arabic — towards the
+          // days that came before. See `DirectionalArrows`.
           _Nav(
-            icon: Icons.chevron_right_rounded,
-            onTap: () => goToWeek(weekStart.subtract(const Duration(days: 7))),
+            icon: DirectionalArrows.earlier,
+            label: S.prevWeek,
+            onTap: () => goToWeek(addDays(weekStart, -7)),
           ),
           Expanded(
             child: GestureDetector(
@@ -278,19 +316,26 @@ class _DaySelector extends ConsumerWidget {
             ),
           ),
           _Nav(
-            icon: Icons.chevron_left_rounded,
-            onTap: () => goToWeek(weekStart.add(const Duration(days: 7))),
+            icon: DirectionalArrows.later,
+            label: S.nextWeek,
+            onTap: () => goToWeek(addDays(weekStart, 7)),
           ),
         ]),
         const SizedBox(height: AppSpacing.sm),
         SizedBox(
-          height: 74,
+          // The strip is a fixed-height row of seven equal columns, so its
+          // height has to follow the text it holds: a chip stacks a weekday,
+          // a date and a coverage dot, and at a 1.6 text scale 74 dp clipped
+          // the dot and overflowed by 21 px. Scaling the box keeps the seven
+          // columns equal — which is the point of the strip — instead of
+          // letting one day's chip grow taller than its neighbours.
+          height: MediaQuery.textScalerOf(context).scale(74),
           child: Row(children: [
             for (int i = 0; i < 7; i++) ...[
               Expanded(
                 child: _DayChip(
-                  day: weekStart.add(Duration(days: i)),
-                  isToday: weekStart.add(Duration(days: i)) == today,
+                  day: addDays(weekStart, i),
+                  isToday: addDays(weekStart, i) == today,
                   selected: i == selected,
                   counts: countsFor(i),
                   onTap: () => onPick(i),
@@ -306,22 +351,38 @@ class _DaySelector extends ConsumerWidget {
 }
 
 class _Nav extends StatelessWidget {
-  const _Nav({required this.icon, required this.onTap});
+  const _Nav({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
   final IconData icon;
+  final String label;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final c = context.c;
-    return PressScale(
+    return Semantics(
+      button: true,
+      label: label,
       onTap: onTap,
-      borderRadius: BorderRadius.circular(AppRadii.pill),
-      child: Container(
-        width: 36,
-        height: 36,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(color: c.surface2, shape: BoxShape.circle),
-        child: Icon(icon, size: 20, color: c.ink2),
+      child: ExcludeSemantics(
+        child: Tooltip(
+          message: label,
+          excludeFromSemantics: true,
+          child: PressScale(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(AppRadii.pill),
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              alignment: Alignment.center,
+              decoration:
+                  BoxDecoration(color: c.surface2, shape: BoxShape.circle),
+              child: Icon(icon, size: 20, color: c.ink2),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -346,66 +407,81 @@ class _DayChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.c;
     final (total, gaps) = counts;
-    return PressScale(
+    // One node per column, spelling the day out. The cell shows a letter and
+    // a number, which is the right *visual* density for seven columns and the
+    // wrong thing to hear: «س ١٢» names no day. The amber dot is also the
+    // only sign that a day is short-staffed, and colour alone is not a
+    // status — so the gap is said here too.
+    return Semantics(
+      button: true,
+      selected: selected,
       onTap: onTap,
-      borderRadius: BorderRadius.circular(AppRadii.md),
-      child: AnimatedContainer(
-        duration: effectiveDuration(context, MotionTokens.short),
-        curve: effectiveCurve(context, MotionTokens.standard),
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-        decoration: BoxDecoration(
-          color: selected ? c.primary : c.surface,
-          border: Border.all(
-            color: selected
-                ? c.primary
-                : isToday
-                    ? c.primary.withValues(alpha: 0.45)
-                    : c.line,
+      label: gaps > 0
+          ? '${AppTime.weekdayDay(day)}، ${S.coverageGap}'
+          : AppTime.weekdayDay(day),
+      excludeSemantics: true,
+      child: PressScale(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        child: AnimatedContainer(
+          duration: effectiveDuration(context, MotionTokens.short),
+          curve: effectiveCurve(context, MotionTokens.standard),
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+          decoration: BoxDecoration(
+            color: selected ? c.primary : c.surface,
+            border: Border.all(
+              color: selected
+                  ? c.primary
+                  : isToday
+                      ? c.primary.withValues(alpha: 0.45)
+                      : c.line,
+            ),
+            borderRadius: BorderRadius.circular(AppRadii.md),
           ),
-          borderRadius: BorderRadius.circular(AppRadii.md),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              // Two letters keep all seven columns readable at this width.
-              AppDate.weekdayOf(day).substring(0, 2),
-              style: TextStyle(
-                color: selected ? c.primaryInk : c.ink2,
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                // One letter, and a distinct one per day: a two-character
+                // prefix of an Arabic weekday is «ال» every time.
+                AppDate.weekdayInitialOf(day),
+                style: TextStyle(
+                  color: selected ? c.primaryInk : c.ink2,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              toArabicIndic('${day.day}'),
-              style: AppTypography.digits(
-                selected ? c.primaryInk : c.ink,
-                size: 15,
+              const SizedBox(height: 3),
+              Text(
+                toArabicIndic('${day.day}'),
+                style: AppTypography.digits(
+                  selected ? c.primaryInk : c.ink,
+                  size: 15,
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            SizedBox(
-              height: 6,
-              child: total == 0
-                  ? null
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: gaps > 0
-                                ? (selected ? c.warnTint : c.warn)
-                                : (selected ? c.primaryInk : c.ok),
+              const SizedBox(height: 4),
+              SizedBox(
+                height: 6,
+                child: total == 0
+                    ? null
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: gaps > 0
+                                  ? (selected ? c.warnTint : c.warn)
+                                  : (selected ? c.primaryInk : c.ok),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-            ),
-          ],
+                        ],
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -442,23 +518,35 @@ class _BulkActionsState extends ConsumerState<_BulkActions> {
     // there is almost always a yesterday, and it usually looks like today.
     // The templates list stays reachable because it is schedule-scoped, not
     // shift-scoped.
-    return Row(children: [
-      Expanded(
-        child: _Action(
-          icon: Icons.content_copy_rounded,
-          label: S.copyPreviousDay,
-          onTap: _busy ? null : _copyPreviousDay,
-        ),
-      ),
-      const SizedBox(width: AppSpacing.sm),
-      Expanded(
-        child: _Action(
-          icon: Icons.event_repeat_rounded,
-          label: S.templatesButton,
-          onTap: _busy ? null : _openTemplates,
-        ),
-      ),
-    ]);
+    final copy = _Action(
+      icon: Icons.content_copy_rounded,
+      label: S.copyPreviousDay,
+      onTap: _busy ? null : _copyPreviousDay,
+    );
+    final templates = _Action(
+      icon: Icons.event_repeat_rounded,
+      label: S.templatesButton,
+      onTap: _busy ? null : _openTemplates,
+    );
+    return LayoutBuilder(builder: (context, constraints) {
+      final largeNarrow = MediaQuery.textScalerOf(context).scale(1) >= 1.4 &&
+          constraints.maxWidth < 420;
+      if (largeNarrow) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            copy,
+            const SizedBox(height: AppSpacing.sm),
+            templates,
+          ],
+        );
+      }
+      return Row(children: [
+        Expanded(child: copy),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(child: templates),
+      ]);
+    });
   }
 
   void _refresh() {
@@ -478,7 +566,7 @@ class _BulkActionsState extends ConsumerState<_BulkActions> {
     setState(() => _busy = true);
     final result = await ref.read(shiftRepositoryProvider).copyDay(
           detachmentId: widget.detachmentId,
-          fromDay: widget.day.subtract(const Duration(days: 1)),
+          fromDay: addDays(widget.day, -1),
           toDay: widget.day,
         );
     _refresh();
@@ -600,17 +688,19 @@ class _TemplatesBody extends ConsumerWidget {
   }
 }
 
-/// "٥ أيام · ٥ أيلول – ١٤ أيلول" — how many days this repeat covers and the
-/// span it runs across. A one-day template just names the day.
-String _dateSpan(ShiftTemplate template) {
+/// How many days this repeat covers and the span it runs across. The count
+/// and dates are separate facts so no middle dot can be mistaken for a zero.
+Widget _dateSpan(ShiftTemplate template) {
   final first = template.firstDate;
+  if (first == null) return const SizedBox.shrink();
   final last = template.lastDate;
-  if (first == null) return '';
   if (template.dayCount == 1 || last == null || last == first) {
-    return AppDate.dayMonth(first);
+    return AppMeta(parts: [AppMetaText.day(first)]);
   }
-  return '${toArabicIndic('${template.dayCount}')} ${S.templateDays} · '
-      '${AppDate.dayMonth(first)} – ${AppDate.dayMonth(last)}';
+  return AppMeta(parts: [
+    AppMetaText.count(template.dayCount, label: S.templateDays),
+    AppMetaText('${AppTime.day(first)} – ${AppTime.day(last)}'),
+  ]);
 }
 
 class _TemplateRow extends ConsumerWidget {
@@ -639,19 +729,12 @@ class _TemplateRow extends ConsumerWidget {
                     color: c.ink, fontSize: 14, fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 2),
-              Directionality(
-                textDirection: TextDirection.ltr,
-                child: Text(
-                  AppDate.minuteRange(
-                      template.startMinutes, template.endMinutes),
-                  style: AppTypography.digits(c.ink3, size: 12),
-                ),
+              Text(
+                AppTime.minuteRange(template.startMinutes, template.endMinutes),
+                style: AppTypography.digits(c.ink3, size: 12),
               ),
               const SizedBox(height: 4),
-              Text(
-                _dateSpan(template),
-                style: TextStyle(color: c.ink3, fontSize: 11),
-              ),
+              _dateSpan(template),
             ],
           ),
         ),
@@ -703,13 +786,8 @@ class _DayHeader extends StatelessWidget {
     return Row(children: [
       Expanded(
         child: Text(
-          '${AppDate.weekdayOf(day)} · ${AppDate.dayMonth(day)}',
-          style: TextStyle(
-            color: c.ink3,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.6,
-          ),
+          AppTime.weekdayDay(day),
+          style: AppTypography.eyebrow(c),
         ),
       ),
       if (onAdd != null)
@@ -739,7 +817,11 @@ class _DayHeader extends StatelessWidget {
 }
 
 class _EmptyDay extends StatelessWidget {
-  const _EmptyDay({required this.onAdd});
+  const _EmptyDay({required this.historical, required this.onAdd});
+
+  /// Changes what the emptiness *means*: on a live schedule it is work not
+  /// done yet, on a finished one it is a week the detachment did not run.
+  final bool historical;
 
   final VoidCallback? onAdd;
 
@@ -755,8 +837,8 @@ class _EmptyDay extends StatelessWidget {
       ),
       child: EmptyState(
         icon: Icons.event_available_outlined,
-        title: S.noShiftsToday,
-        body: S.noShiftsTodaySub,
+        title: historical ? S.historicalNoShiftsInWeek : S.noShiftsToday,
+        body: historical ? S.historicalNoShiftsInWeekSub : S.noShiftsTodaySub,
         actionLabel: onAdd == null ? null : S.addShift,
         onAction: onAdd,
       ),
@@ -805,6 +887,54 @@ class _ShiftCard extends ConsumerWidget {
     final t = Theme.of(context).textTheme;
     final running = shift.isRunningNow;
     final manager = shift.manager;
+    final largeText = MediaQuery.textScalerOf(context).scale(1) >= 1.4;
+    final identity = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Flexible(
+            child: Tooltip(
+              message: shift.centerName,
+              excludeFromSemantics: true,
+              child: Text(
+                shift.centerName,
+                style: t.titleMedium,
+                maxLines: largeText ? 2 : 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          if (shift.templateId != null) ...[
+            const SizedBox(width: 6),
+            Tooltip(
+              message: S.templatesTitle,
+              child: Icon(
+                Icons.event_repeat_rounded,
+                size: 14,
+                color: c.ink3,
+              ),
+            ),
+          ],
+        ]),
+        const SizedBox(height: 2),
+        Text(
+          AppTime.minuteRange(shift.startMinutes, shift.endMinutes),
+          style: AppTypography.digits(c.ink2, size: 14),
+        ),
+      ],
+    );
+    final coverage = StatusChip(
+      kind: running
+          ? StatusKind.info
+          : shift.hasCoverageGap
+              ? StatusKind.warn
+              : StatusKind.ok,
+      label: running
+          ? S.now
+          : shift.hasCoverageGap
+              ? '${S.coverageGap} ${AppNumber.count(shift.gap)}'
+              : S.shiftCoverageOk,
+    );
 
     return PressScale(
       onTap: _canOpen
@@ -831,49 +961,18 @@ class _ShiftCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(children: [
-                      Flexible(
-                        child: Text(shift.centerName,
-                            style: t.titleMedium,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                      if (shift.templateId != null) ...[
-                        const SizedBox(width: 6),
-                        Icon(Icons.event_repeat_rounded,
-                            size: 14, color: c.ink3),
-                      ],
-                    ]),
-                    const SizedBox(height: 2),
-                    Directionality(
-                      textDirection: TextDirection.ltr,
-                      child: Text(
-                        AppDate.minuteRange(
-                            shift.startMinutes, shift.endMinutes),
-                        style: AppTypography.digits(c.ink2, size: 14),
-                      ),
-                    ),
-                  ],
-                ),
+            if (largeText) ...[
+              identity,
+              const SizedBox(height: AppSpacing.sm),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: coverage,
               ),
-              StatusChip(
-                kind: running
-                    ? StatusKind.info
-                    : shift.hasCoverageGap
-                        ? StatusKind.warn
-                        : StatusKind.ok,
-                label: running
-                    ? S.now
-                    : shift.hasCoverageGap
-                        ? '${S.coverageGap} · ${toArabicIndic('${shift.gap}')}'
-                        : S.shiftCoverageOk,
-              ),
-            ]),
+            ] else
+              Row(children: [
+                Expanded(child: identity),
+                coverage,
+              ]),
             const SizedBox(height: AppSpacing.md),
             _CoverageBar(shift: shift),
             const SizedBox(height: AppSpacing.sm),
@@ -902,7 +1001,7 @@ class _ShiftCard extends ConsumerWidget {
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                   ),
-                  maxLines: 1,
+                  maxLines: largeText ? 3 : 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -956,13 +1055,9 @@ class _CoverageBar extends StatelessWidget {
         Text(S.shiftAssignedOfNeeded,
             style: TextStyle(color: c.ink3, fontSize: 12)),
         const SizedBox(width: 6),
-        Directionality(
-          textDirection: TextDirection.ltr,
-          child: Text(
-            '${toArabicIndic('${shift.assigned}')}'
-            ' / ${toArabicIndic('${shift.needed}')}',
-            style: AppTypography.digits(c.ink, size: 14),
-          ),
+        Text(
+          AppNumber.ratio(shift.assigned, shift.needed),
+          style: AppTypography.digits(c.ink, size: 14),
         ),
       ]),
     ]);

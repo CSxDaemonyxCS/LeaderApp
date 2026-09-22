@@ -23,6 +23,21 @@ enum ProblemCode {
   /// `HTTP 403`. Signed in, but not allowed to do this. App-wide.
   notPermitted('not_permitted'),
 
+  /// The organisation does not have the product module this request belongs
+  /// to (Point 8 — `API_CONTRACT.md` → Tenant product features, "Enforcement
+  /// and retention"). Tenant-wide and cross-feature: any module read, write,
+  /// export or search may return it. **Not a permission** — the same request
+  /// from the Main Admin is refused the same way — so it never shares copy
+  /// with [notPermitted].
+  featureDisabled('feature_disabled'),
+
+  /// A create or consuming mutation would exceed the organisation's effective
+  /// plan limit (Point 7 — `API_CONTRACT.md` → "Limit enforcement
+  /// semantics"). The backend is the authority; this client performs no local
+  /// limit check. **Not a permission** and not a feature: the account may do
+  /// this, the organisation has no room for more of it.
+  planLimitReached('plan_limit_reached'),
+
   /// `HTTP 404`.
   notFound('not_found'),
 

@@ -6,6 +6,8 @@ import 'package:mtm/core/access/capability_guard.dart';
 import 'package:mtm/core/result/result.dart';
 import 'package:mtm/core/theme/app_palette.dart';
 import 'package:mtm/core/theme/app_theme.dart';
+import 'package:mtm/features/detachment/data/detachment_providers.dart';
+import 'package:mtm/features/detachment/domain/detachment_models.dart';
 import 'package:mtm/features/detachment/presentation/detachment_member_status_page.dart';
 import 'package:mtm/features/shift/domain/shift_models.dart';
 import 'package:mtm/features/shift/domain/shift_repository.dart';
@@ -20,6 +22,25 @@ import 'package:mtm/l10n/strings.dart';
 /// while their page is open.
 
 const _det = 'd1';
+
+/// The detachment this member belongs to.
+///
+/// Stubbed like the roster and the schedule are. Since Point 13 the page's
+/// controls resolve through `DetachmentAccess`, which asks the detachment
+/// whether it is still running — so the states below say which detachment
+/// this is rather than leaving the real repository to answer for an id it has
+/// never heard of.
+const _detachment = Detachment(
+  id: _det,
+  detachmentGroupId: 't1',
+  name: 'مفرزة الاختبار',
+  region: 'دمشق',
+  mainCenter: 'مركز الاختبار',
+  memberCount: 1,
+  weeklyShiftCount: 1,
+  coveragePercent: 0,
+  status: DetachmentStatus.active,
+);
 const _memberId = 'm1';
 
 TeamMember _member({String? phone}) => TeamMember(
@@ -81,6 +102,9 @@ Future<void> _pump(
         teamRepositoryProvider.overrideWithValue(
             _StubTeamRepository(member ?? Success(_member()))),
         shiftRepositoryProvider.overrideWithValue(_StubShiftRepository(todays)),
+        detachmentByIdProvider(_det).overrideWith(
+          (ref) async => const Success<Detachment>(_detachment),
+        ),
       ],
       child: MaterialApp(
         theme: AppTheme.light(PaletteId.medical),

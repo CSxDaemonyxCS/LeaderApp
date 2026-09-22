@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/format/app_date.dart';
-import '../../../core/motion/animated_counter.dart';
+import '../../../core/format/app_number.dart';
+import '../../../core/format/app_time.dart';
 import '../../../core/motion/press_scale.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/sheet_scaffold.dart';
+import '../../../core/widgets/app_meta.dart';
 import '../../../core/widgets/status_chip.dart';
 import '../../../l10n/strings.dart';
 import '../../team/domain/team_models.dart';
@@ -121,18 +122,17 @@ class _ManageBodyState extends ConsumerState<_ManageBody> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                          '${AppDate.weekdayOf(shift.date)} · '
-                          '${AppDate.dayMonth(shift.date)}',
-                          style: TextStyle(color: c.ink3, fontSize: 12)),
-                      const SizedBox(height: 2),
-                      Directionality(
-                        textDirection: TextDirection.ltr,
-                        child: Text(
-                          AppDate.minuteRange(
-                              shift.startMinutes, shift.endMinutes),
-                          style: AppTypography.digits(c.ink, size: 16),
-                        ),
+                      AppMeta(
+                        parts: [
+                          AppMetaText(AppTime.weekdayDay(shift.date)),
+                          AppMetaText(
+                            AppTime.minuteRange(
+                              shift.startMinutes,
+                              shift.endMinutes,
+                            ),
+                            emphasis: true,
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -146,7 +146,7 @@ class _ManageBodyState extends ConsumerState<_ManageBody> {
                   label: running
                       ? S.now
                       : shift.hasCoverageGap
-                          ? '${S.coverageGap} · ${toArabicIndic('${shift.gap}')}'
+                          ? '${S.coverageGap} ${AppNumber.count(shift.gap)}'
                           : S.shiftCoverageOk,
                 ),
               ]),
@@ -200,13 +200,9 @@ class _ManageBodyState extends ConsumerState<_ManageBody> {
               style: TextStyle(
                   color: c.ink2, fontSize: 13, fontWeight: FontWeight.w600)),
           const SizedBox(width: 6),
-          Directionality(
-            textDirection: TextDirection.ltr,
-            child: Text(
-              '${toArabicIndic('${shift.assigned}')} / '
-              '${toArabicIndic('${shift.needed}')}',
-              style: AppTypography.digits(c.ink3, size: 13),
-            ),
+          Text(
+            AppNumber.ratio(shift.assigned, shift.needed),
+            style: AppTypography.digits(c.ink3, size: 13),
           ),
         ]),
         const SizedBox(height: AppSpacing.sm),
@@ -283,8 +279,8 @@ class _ManageBodyState extends ConsumerState<_ManageBody> {
       builder: (context) => AlertDialog(
         title: const Text(S.deleteShift),
         content: Text(
-          '${shift.centerName} · '
-          '${AppDate.minuteRange(shift.startMinutes, shift.endMinutes)}'
+          '${shift.centerName}، '
+          '${AppTime.minuteRange(shift.startMinutes, shift.endMinutes)}'
           '\n\n${S.deleteShiftBody}',
         ),
         actions: [

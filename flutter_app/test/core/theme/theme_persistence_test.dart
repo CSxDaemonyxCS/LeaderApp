@@ -4,9 +4,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mtm/core/display/frame_rate.dart';
 import 'package:mtm/core/motion/motion_level.dart';
 import 'package:mtm/core/result/result.dart';
+import 'package:mtm/core/storage/local_store.dart';
 import 'package:mtm/core/theme/app_palette.dart';
 import 'package:mtm/core/theme/theme_controller.dart';
 import 'package:mtm/features/settings/data/settings_providers.dart';
+import 'package:mtm/features/settings/data/mock_settings_repository.dart';
 import 'package:mtm/features/settings/domain/settings_models.dart';
 import 'package:mtm/features/settings/domain/settings_repository.dart';
 
@@ -34,11 +36,11 @@ void main() {
       await container.read(themeControllerProvider.future);
       final controller = container.read(themeControllerProvider.notifier);
 
-      await controller.setPalette(PaletteId.teal);
+      await controller.setPalette(PaletteId.copper);
       await controller.setMode(ThemeMode.dark);
       await controller.setEyeProtect(true);
 
-      expect(repo.stored?.palette, PaletteId.teal);
+      expect(repo.stored?.palette, PaletteId.copper);
       expect(repo.stored?.mode, ThemeMode.dark);
       expect(repo.stored?.eyeProtect, isTrue);
       expect(repo.writes, 3, reason: 'one write per change, no extras');
@@ -133,6 +135,49 @@ void main() {
         const ThemeState(palette: PaletteId.teal, mode: ThemeMode.dark),
         isNot(const ThemeState(palette: PaletteId.teal, mode: ThemeMode.light)),
       );
+    });
+  });
+
+  group('device persistence', () {
+    test('a new repository restores palette, appearance and Eye Protection',
+        () async {
+      final store = InMemoryLocalStore();
+      final first = MockSettingsRepository(localStore: store);
+      const selected = ThemeState(
+        palette: PaletteId.clay,
+        mode: ThemeMode.system,
+        eyeProtect: true,
+      );
+      await first.updateThemePrefs(selected);
+
+      final relaunched = MockSettingsRepository(localStore: store);
+      final result = await relaunched.themePrefs();
+      expect((result as Success<ThemeState?>).data, selected);
+    });
+
+    test('corrupt and unknown stored values fall back without wiping storage',
+        () async {
+      for (final raw in [
+        'not-json',
+        '{"palette":"removed","mode":"future","eyeProtect":true}',
+      ]) {
+        final store = InMemoryLocalStore({
+          MockSettingsRepository.themePrefsKey: raw,
+          'unrelated': 'keep-me',
+        });
+        final result =
+            await MockSettingsRepository(localStore: store).themePrefs();
+        final value = (result as Success<ThemeState?>).data;
+        if (raw == 'not-json') {
+          expect(value, isNull);
+        } else {
+          expect(value!.palette, PaletteId.medical);
+          expect(value.mode, ThemeMode.light);
+          expect(value.eyeProtect, isTrue,
+              reason: 'a valid independent comfort setting is preserved');
+        }
+        expect(store.values['unrelated'], 'keep-me');
+      }
     });
   });
 }

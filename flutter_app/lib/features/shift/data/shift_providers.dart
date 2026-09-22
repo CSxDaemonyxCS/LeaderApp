@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../demo/data/demo_workspace.dart';
 import '../../../core/result/result.dart';
+import '../../../core/time/clock.dart';
 import '../../team/data/team_providers.dart';
 import '../domain/shift_conflict_snapshot.dart';
 import '../domain/shift_models.dart';
@@ -11,7 +13,11 @@ import 'mock_shift_repository.dart';
 final shiftRepositoryProvider = Provider<ShiftRepository>((ref) {
   // The mock resolves assignments against the same roster the Members tab
   // reads, so the two screens can never disagree about who exists.
-  return MockShiftRepository(ref.watch(teamRepositoryProvider));
+  return ref.watch(demoWorkspaceProvider)?.shifts ??
+      MockShiftRepository(
+        ref.watch(teamRepositoryProvider),
+        clock: ref.watch(clockProvider),
+      );
 });
 
 /// Where the current-as-of-detection snapshot for a conflicted shift write
@@ -35,7 +41,7 @@ class WeekQuery {
 
   WeekQuery shifted(int weeks) => WeekQuery(
         detachmentId: detachmentId,
-        weekStart: weekStart.add(Duration(days: 7 * weeks)),
+        weekStart: addDays(weekStart, 7 * weeks),
       );
 
   @override
@@ -55,14 +61,14 @@ class WeekQuery {
 /// not be sitting there when another opens (`DETACHMENT-SCOPING.md` §2,
 /// rule 3).
 final selectedWeekProvider = StateProvider.autoDispose.family<DateTime, String>(
-    (ref, detachmentId) => startOfWeek(DateTime.now()));
+    (ref, detachmentId) => startOfWeek(ref.watch(clockProvider)()));
 
 /// The selected day inside that week, as an offset 0–6 from Saturday.
 final selectedDayOffsetProvider =
     StateProvider.autoDispose.family<int, String>((ref, detachmentId) {
   // Open on today when today is inside the shown week — the day someone
   // opening the schedule almost always wants.
-  final now = DateTime.now();
+  final now = ref.watch(clockProvider)();
   return dateOnly(now).difference(startOfWeek(now)).inDays;
 });
 
@@ -77,6 +83,37 @@ final weekShiftsProvider = FutureProvider.autoDispose
 final todaysShiftsProvider = FutureProvider.autoDispose
     .family<Result<List<Shift>>, String>((ref, detId) async {
   return ref.read(shiftRepositoryProvider).listForDetachmentToday(detId);
+});
+
+/// How far back the schedule is searched for a detachment's last working day.
+///
+/// Bounded on purpose (§24): finding the week a finished detachment last ran
+/// in must not turn into pulling every shift it ever had. Six months covers a
+/// detachment that runs ten to fifteen days many times over.
+const Duration scheduleLookback = Duration(days: 180);
+
+/// The most recent day [detachmentId] actually ran a shift on, or `null` if it
+/// ran none inside [scheduleLookback].
+///
+/// Only a *finished* detachment's schedule asks for this. A live one opens on
+/// this week, which is the week the person opening it means; an archived one
+/// opened on this week would show an empty day forever and read as broken.
+/// One bounded range read, and only on the archive path.
+final lastScheduledDayProvider = FutureProvider.autoDispose
+    .family<DateTime?, String>((ref, detachmentId) async {
+  final now = ref.watch(clockProvider)();
+  final result = await ref.read(shiftRepositoryProvider).listForRange(
+        detachmentId,
+        dateOnly(now).subtract(scheduleLookback),
+        dateOnly(now),
+      );
+  final shifts = result.when(
+    success: (List<Shift> data, {bool stale = false}) => data,
+    failure: (_, __) => const <Shift>[],
+    offline: (cached) => cached ?? const <Shift>[],
+  );
+  if (shifts.isEmpty) return null;
+  return shifts.map((s) => s.date).reduce((a, b) => a.isAfter(b) ? a : b);
 });
 
 final shiftByIdProvider =

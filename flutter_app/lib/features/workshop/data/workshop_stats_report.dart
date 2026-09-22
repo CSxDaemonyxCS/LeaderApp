@@ -1,4 +1,5 @@
-import '../../../core/format/app_date.dart';
+import '../../../core/format/app_number.dart';
+import '../../../core/format/app_time.dart';
 import '../../../core/motion/animated_counter.dart';
 import '../../../l10n/strings.dart';
 import '../../detachment/domain/report_models.dart';
@@ -43,7 +44,7 @@ ReportDocument buildWorkshopStatsReport(
     WorkshopReportSection.participants,
     WorkshopReportSection.team,
   },
-  DateTime? generatedAt,
+  required DateTime generatedAt,
 }) {
   final blocks = <ReportBlock>[
     if (sections.contains(WorkshopReportSection.summary)) ...[
@@ -64,7 +65,7 @@ ReportDocument buildWorkshopStatsReport(
       ),
       ReportFacts(S.statsFinanceSection, [
         (S.statsRegistrationFee, formatWorkshopAmount(stats.registrationFee)),
-        (S.statsPayers, toArabicIndic('${stats.paidCount}')),
+        (S.statsPayers, AppNumber.count(stats.paidCount)),
         (
           S.statsFinancialTotalLine,
           formatWorkshopAmount(stats.totalPaidAmount)
@@ -74,7 +75,7 @@ ReportDocument buildWorkshopStatsReport(
     if (sections.contains(WorkshopReportSection.participants))
       ReportTable(
         '${S.statsSecParticipants} '
-        '(${toArabicIndic('${stats.participants.length}')})',
+        '(${AppNumber.count(stats.participants.length)})',
         const [
           '#',
           S.statsColName,
@@ -87,7 +88,7 @@ ReportDocument buildWorkshopStatsReport(
     if (sections.contains(WorkshopReportSection.team))
       ReportTable(
         '${S.statsSecTeam} '
-        '(${toArabicIndic('${stats.teamMembers.length}')})',
+        '(${AppNumber.count(stats.teamMembers.length)})',
         const [
           '#',
           S.statsColName,
@@ -101,29 +102,29 @@ ReportDocument buildWorkshopStatsReport(
 
   return ReportDocument(
     detachmentName: stats.name,
-    tenantName: stats.location,
-    generatedAt: generatedAt ?? DateTime.now(),
+    detachmentGroupName: stats.location,
+    generatedAt: generatedAt,
     // Present only because the model requires it; `headerNote` is what the
     // header actually prints for this document.
     range: ReportRange.week,
-    headerNote: '${S.workshopStatsTitle} · ${AppDate.dayMonth(stats.at)}',
+    headerNote: '${S.workshopStatsTitle} — ${AppTime.day(stats.at)}',
     blocks: blocks,
   );
 }
 
 List<String> _summaryRow(String label, WorkshopGroupStats group) => [
       label,
-      toArabicIndic('${group.present}'),
-      toArabicIndic('${group.absent}'),
-      toArabicIndic('${group.paid}'),
-      toArabicIndic('${group.unpaid}'),
-      toArabicIndic('${group.unspecified}'),
+      AppNumber.count(group.present),
+      AppNumber.count(group.absent),
+      AppNumber.count(group.paid),
+      AppNumber.count(group.unpaid),
+      AppNumber.count(group.unspecified),
     ];
 
 List<List<String>> _peopleRows(List<WorkshopStatsPerson> people) => [
       for (var i = 0; i < people.length; i++)
         [
-          toArabicIndic('${i + 1}'),
+          AppNumber.count(i + 1),
           people[i].name,
           people[i].roleLabel,
           people[i].attendance.statsLabel,

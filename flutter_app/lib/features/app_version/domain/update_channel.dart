@@ -21,16 +21,17 @@ import 'package:flutter/foundation.dart';
 /// owns the update destination" decision: the client does, with no wire
 /// override.
 abstract final class UpdateChannel {
-  /// The Play Store listing for `applicationId = com.mtm.mtm`
+  /// The Play Store listing for `applicationId = com.leader.teams`
   /// (`android/app/build.gradle.kts`). The `https` form resolves in a
   /// browser as well as the Play app, so it is the safe default.
   static const String androidStore =
-      'https://play.google.com/store/apps/details?id=com.mtm.mtm';
+      'https://play.google.com/store/apps/details?id=com.leader.teams';
 
   /// The Play Store app's own scheme. A launcher should try this first and
   /// fall back to [androidStore]; kept here so the fallback pair lives in
   /// one place.
-  static const String androidStoreNative = 'market://details?id=com.mtm.mtm';
+  static const String androidStoreNative =
+      'market://details?id=com.leader.teams';
 
   /// PLACEHOLDER. MTM has no published iOS listing yet — there is no iOS
   /// build target in the repo. Replace with the real

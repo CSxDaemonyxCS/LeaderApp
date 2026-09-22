@@ -31,6 +31,8 @@ const _full = AuthUser(
   id: 'u_1',
   name: 'ليلى ياسين',
   email: 'l.yaseen@mtm.org',
+  role: AuthRole.mainAdmin,
+  saasTenantId: 'saas_test',
   capabilities: Capabilities(global: Cap.all),
   orgName: 'فريق الإسعاف التطوعي · دمشق',
   avatarInitials: 'لي',
@@ -44,6 +46,10 @@ const _scoped = AuthUser(
   id: 'u_2',
   name: 'سامر الحلبي',
   email: 's.halabi@mtm.org',
+  // A Simple Admin: `admin` is the role, and it carries the *same*
+  // `saasTenantId` as `_full` above — two administrators of one customer.
+  role: AuthRole.admin,
+  saasTenantId: 'saas_test',
   capabilities: Capabilities(scoped: {'d1': Cap.scoped}),
   orgName: 'فريق الإسعاف التطوعي · دمشق',
 );
@@ -264,6 +270,30 @@ void main() {
     expect(find.text(S.profileReadOnlyNote), findsOneWidget);
     // Nothing member-shaped leaked in from the Members module.
     expect(find.text(S.detachmentTeam), findsNothing);
+  });
+
+  // Point 2 — the account's product surface is now on the payload, so the
+  // screen states it instead of leaving the reader to infer a rank from the
+  // capability rows. The two must not be confused: a Main Admin whose grant
+  // was narrowed is still a Main Admin.
+  testWidgets('a Main Admin is named as one, not as a Simple Admin',
+      (tester) async {
+    await _pumpProfile(tester, me: const Success<AuthUser?>(_full));
+
+    expect(find.text(S.profileRole), findsOneWidget);
+    expect(find.text(S.roleMainAdmin), findsOneWidget);
+    expect(find.text(S.roleSimpleAdmin), findsNothing);
+    expect(find.text(S.roleSuperAdmin), findsNothing);
+  });
+
+  testWidgets('a Simple Admin is named as one, not as a Main Admin',
+      (tester) async {
+    await _pumpProfile(tester, me: const Success<AuthUser?>(_scoped));
+
+    expect(find.text(S.roleSimpleAdmin), findsOneWidget);
+    expect(find.text(S.roleMainAdmin), findsNothing);
+    // And its narrowed grant is still reported truthfully alongside.
+    expect(find.text(S.profileAccessScoped), findsWidgets);
   });
 
   testWidgets('a missing avatar is a glyph, never invented initials',

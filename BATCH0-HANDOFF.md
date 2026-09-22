@@ -530,6 +530,17 @@ wire format.** Read them and transcribe:
 
 # SESSION 5 LOG — 2026-09-02
 
+> **Terminology note added 2026-09-07 (Point 1).** Everything this log calls a
+> **tenant** is now called a **DetachmentGroup**. The rename was purely
+> terminological — no behaviour changed — and it was made because "tenant" is
+> the word the platform layer needs for the paying customer (`SaasTenant`,
+> keyed `tenantId`), which is a different thing entirely. Read every `Tenant`,
+> `tenantId`, `features/tenant/` and `/tenant` below as `DetachmentGroup`,
+> `detachmentGroupId`, `features/detachment_group/` and `/detachment-groups`.
+> The old routes still resolve, as redirects. See `HANDOFF.md`
+> §ZZZZZZZZZZZZ and `API_CONTRACT.md` § Terminology. The prose below is left
+> as it was written, because it is a dated record of that session.
+
 **Read this section first. It supersedes sessions 1–4 wherever they disagree.**
 The scope correction in the session-4 log still stands: frontend only, mock
 data, `// ASSUMPTION:` in code rather than a report. Nothing was committed —

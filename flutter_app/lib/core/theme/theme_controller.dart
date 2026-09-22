@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/settings/data/settings_providers.dart';
+import '../brand/brand_logo.dart';
 import 'app_palette.dart';
+import 'theme_choice.dart';
 import 'theme_state.dart';
 
+export 'theme_choice.dart';
 export 'theme_state.dart';
 
 /// The live theme choice, hydrated from [SettingsRepository] on first read
@@ -23,20 +26,38 @@ class ThemeController extends AsyncNotifier<ThemeState> {
   @override
   Future<ThemeState> build() async {
     final stored = await ref.read(settingsRepositoryProvider).themePrefs();
-    return stored.when(
+    final restored = stored.when(
       success: (data, {stale = false}) => data ?? const ThemeState.initial(),
       failure: (_, __) => const ThemeState.initial(),
       offline: (cached) => cached ?? const ThemeState.initial(),
     );
+    // Compatibility normalization is intentionally a no-op now that every
+    // historical palette/mode pair is valid again.
+    return restored.normalizedForChoice();
   }
 
   ThemeState get _current => state.valueOrNull ?? const ThemeState.initial();
 
+  /// Applies [next] on the current frame, then persists it.
+  ///
+  /// A failed or throwing write is deliberately not surfaced and never rolls
+  /// the state back: the user asked for this theme, they can see it, and the
+  /// honest consequence of a storage failure is that the choice may not
+  /// survive a relaunch — not that the app changes colour under them.
   Future<void> _apply(ThemeState next) async {
     if (next == _current && state.hasValue) return;
     state = AsyncValue.data(next);
-    await ref.read(settingsRepositoryProvider).updateThemePrefs(next);
+    try {
+      await ref.read(settingsRepositoryProvider).updateThemePrefs(next);
+    } catch (e) {
+      debugPrint('ThemeController: theme preference not stored: $e');
+    }
   }
+
+  /// Picks one of the six palettes. Appearance and Eye Protection are
+  /// untouched: both are independent presentation settings.
+  Future<void> setThemeChoice(AppThemeChoice choice) =>
+      _apply(_current.withChoice(choice));
 
   Future<void> setPalette(PaletteId p) => _apply(_current.copyWith(palette: p));
 
@@ -50,8 +71,15 @@ class ThemeController extends AsyncNotifier<ThemeState> {
         ),
       );
 
+  /// Turns the reading-comfort wash on or off. Palette and mode are left
+  /// exactly as they are — the four theme/comfort combinations are all
+  /// reachable, and none of them implies another.
   Future<void> setEyeProtect(bool on) =>
       _apply(_current.copyWith(eyeProtect: on));
+
+  /// Picks which Leader mark the app draws. Purely cosmetic, and the
+  /// launcher icon is unaffected — see [BrandLogo].
+  Future<void> setLogo(BrandLogo logo) => _apply(_current.copyWith(logo: logo));
 }
 
 final themeControllerProvider =

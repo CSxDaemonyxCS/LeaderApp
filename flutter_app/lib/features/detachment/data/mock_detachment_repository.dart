@@ -9,14 +9,19 @@ import '../domain/detachment_repository.dart';
 /// `memberCount` matches the roster seeded in `MockTeamRepository` for the
 /// same id, so the list card and the Members tab never disagree.
 class MockDetachmentRepository implements DetachmentRepository {
-  MockDetachmentRepository();
+  /// [detachments] replaces the seed — the Customer Demo workspace passes its
+  /// own two.
+  MockDetachmentRepository({List<Detachment>? detachments})
+      : _seed = List.of(detachments ?? _defaultSeed());
 
   final _rand = Random(11);
 
-  final List<Detachment> _seed = [
+  final List<Detachment> _seed;
+
+  static List<Detachment> _defaultSeed() => [
     const Detachment(
       id: 'd_dam_central',
-      tenantId: 't_damascus',
+      detachmentGroupId: 't_damascus',
       name: 'مفرزة دمشق المركزية',
       region: 'دمشق',
       mainCenter: 'مركز الشعلان',
@@ -28,7 +33,7 @@ class MockDetachmentRepository implements DetachmentRepository {
     ),
     const Detachment(
       id: 'd_dam_rural',
-      tenantId: 't_damascus',
+      detachmentGroupId: 't_damascus',
       name: 'مفرزة ريف دمشق',
       region: 'ريف دمشق',
       mainCenter: 'مركز داريا',
@@ -40,7 +45,7 @@ class MockDetachmentRepository implements DetachmentRepository {
     ),
     const Detachment(
       id: 'd_homs',
-      tenantId: 't_central',
+      detachmentGroupId: 't_central',
       name: 'مفرزة حمص',
       region: 'حمص',
       mainCenter: 'مركز الوعر',
@@ -51,7 +56,7 @@ class MockDetachmentRepository implements DetachmentRepository {
     ),
     const Detachment(
       id: 'd_coast',
-      tenantId: 't_coast',
+      detachmentGroupId: 't_coast',
       name: 'مفرزة الساحل',
       region: 'اللاذقية',
       mainCenter: 'مركز اللاذقية',
@@ -62,11 +67,14 @@ class MockDetachmentRepository implements DetachmentRepository {
     ),
     const Detachment(
       id: 'd_north_arch',
-      tenantId: 't_central',
+      detachmentGroupId: 't_central',
       name: 'مفرزة الشمال — مؤرشفة',
       region: 'حلب',
       mainCenter: 'مركز الأشرفية',
-      memberCount: 0,
+      // The roster it ended with, and no shifts *this* week — it has none,
+      // which is what being finished means. Its last worked week is three
+      // weeks back, seeded in `MockShiftRepository`.
+      memberCount: 4,
       weeklyShiftCount: 0,
       coveragePercent: 0,
       status: DetachmentStatus.archived,
@@ -111,13 +119,15 @@ class MockDetachmentRepository implements DetachmentRepository {
 
   @override
   Future<Result<List<Detachment>>> list({
-    String? tenantId,
+    String? detachmentGroupId,
     DetachmentStatus? filter,
     String? query,
   }) async {
     await _latency();
     Iterable<Detachment> out = _seed;
-    if (tenantId != null) out = out.where((d) => d.tenantId == tenantId);
+    if (detachmentGroupId != null) {
+      out = out.where((d) => d.detachmentGroupId == detachmentGroupId);
+    }
     if (filter != null) out = out.where((d) => d.status == filter);
     if (query != null && query.trim().isNotEmpty) {
       final q = query.trim();
@@ -141,7 +151,7 @@ class MockDetachmentRepository implements DetachmentRepository {
 
   @override
   Future<Result<Detachment>> create({
-    required String tenantId,
+    required String detachmentGroupId,
     required String name,
     required String region,
     required String mainCenter,
@@ -150,7 +160,7 @@ class MockDetachmentRepository implements DetachmentRepository {
     await _latency();
     final d = Detachment(
       id: 'd_${DateTime.now().millisecondsSinceEpoch}',
-      tenantId: tenantId,
+      detachmentGroupId: detachmentGroupId,
       name: name,
       region: region,
       mainCenter: mainCenter,
@@ -187,9 +197,10 @@ class MockDetachmentRepository implements DetachmentRepository {
   }
 
   @override
-  Future<Result<int>> deleteAllInTenant(String tenantId) async {
+  Future<Result<int>> deleteAllInGroup(String detachmentGroupId) async {
     await _latency();
-    final doomed = _seed.where((d) => d.tenantId == tenantId).toList();
+    final doomed =
+        _seed.where((d) => d.detachmentGroupId == detachmentGroupId).toList();
     for (final d in doomed) {
       _seed.remove(d);
       _runtimeStats.remove(d.id);

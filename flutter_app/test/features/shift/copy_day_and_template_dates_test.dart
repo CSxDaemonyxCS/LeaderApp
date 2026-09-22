@@ -27,12 +27,24 @@ String _failure<T>(Result<T> r) => r.when(
 
 MockShiftRepository _repo() => MockShiftRepository(MockTeamRepository());
 
+/// [offset] calendar days after [from], at local midnight — DST and all.
+DateTime _calendarDay(DateTime from, int offset) =>
+    DateTime(from.year, from.month, from.day + offset);
+
 const _d = 'd_dam_central';
 
 void main() {
   // Well clear of the seeded weeks, so these tests own their days.
-  final base = startOfWeek(DateTime.now()).add(const Duration(days: 42));
-  DateTime day(int offset) => base.add(Duration(days: offset));
+  //
+  // Calendar arithmetic, never `Duration`: a day is not always 24 hours. Add
+  // `Duration(days: 1)` across the end of daylight saving and you land at
+  // 23:00 on the *previous* day, which is not a date at all — the repository
+  // normalises every date through `dateOnly`, so the expectation would drift
+  // away from production for whichever weeks straddle a DST change. Building
+  // each day as `DateTime(y, m, d + n)` rolls the month over and always lands
+  // on local midnight, exactly like `dateOnly` does.
+  final base = _calendarDay(startOfWeek(DateTime.now()), 42);
+  DateTime day(int offset) => _calendarDay(base, offset);
 
   Future<Shift> makeShift(
     MockShiftRepository repo, {

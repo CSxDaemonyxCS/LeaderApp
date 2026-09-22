@@ -1,16 +1,21 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../demo/data/demo_workspace.dart';
 import '../../../core/access/capability_guard.dart';
 import '../../../core/result/result.dart';
 import '../../../core/sync/outbox_controller.dart';
 import '../../../l10n/strings.dart';
+import '../../announcement/data/announcement_providers.dart';
 import '../../inventory/data/inventory_providers.dart';
 import '../../shift/data/shift_providers.dart';
+import '../domain/notification_history_store.dart';
 import '../domain/notification_models.dart';
 import '../domain/notification_read_store.dart';
 import '../domain/notification_repository.dart';
 import '../domain/notification_selectors.dart';
 import 'mock_notification_repository.dart';
+import '../../tenant_feature/data/tenant_feature_providers.dart';
+import '../../tenant_feature/domain/tenant_feature_models.dart';
 
 /// The record-derived half of the feed.
 ///
@@ -18,9 +23,14 @@ import 'mock_notification_repository.dart';
 /// centre can never raise a row for a shift or an item that exists nowhere
 /// else.
 final notificationRepositoryProvider = Provider<NotificationRepository>((ref) {
+  final inventoryEnabled = ref.watch(
+    tenantFeatureAvailableProvider(TenantFeatureKey.inventory),
+  );
+  final demo = ref.watch(demoWorkspaceProvider);
+  if (demo != null) return demo.notifications;
   return MockNotificationRepository(
     shifts: ref.watch(shiftRepositoryProvider),
-    inventory: ref.watch(inventoryRepositoryProvider),
+    inventory: inventoryEnabled ? ref.watch(inventoryRepositoryProvider) : null,
   );
 });
 
@@ -28,6 +38,13 @@ final notificationRepositoryProvider = Provider<NotificationRepository>((ref) {
 /// build — see [InMemoryNotificationReadStore] for the gap this leaves.
 final notificationReadStoreProvider = Provider<NotificationReadStore>((ref) {
   return InMemoryNotificationReadStore();
+});
+
+/// Where cleared history is persisted. A separate store from read state on
+/// purpose — see the note at the top of `notification_history_store.dart`.
+final notificationHistoryStoreProvider =
+    Provider<NotificationHistoryStore>((ref) {
+  return InMemoryNotificationHistoryStore();
 });
 
 /// The ids the user has marked read, live.
@@ -77,6 +94,77 @@ final notificationReadIdsProvider =
   NotificationReadController.new,
 );
 
+/// The ids an administrator has cleared from the list, live.
+///
+/// An [AsyncNotifier] for the same reason [NotificationReadController] is one:
+/// the stored set arrives asynchronously and the screen has to render in the
+/// meantime. Until it lands nothing is filtered out, which is the safe
+/// direction to be wrong in — a row briefly shown is recoverable; a row
+/// wrongly hidden is a notice the administrator never learns was sent.
+class NotificationHistoryController extends AsyncNotifier<Set<String>> {
+  @override
+  Future<Set<String>> build() =>
+      ref.read(notificationHistoryStoreProvider).clearedIds();
+
+  Set<String> get _current => state.valueOrNull ?? const {};
+
+  /// Clears [ids] from the history.
+  ///
+  /// Ids already on file are dropped before the store is touched, so a second
+  /// confirmation — or a clear over an already-cleared list — is one write of
+  /// what actually changed, never a second write of what did not. That is also
+  /// the duplicate-action guard: returning [Success] with `0` is the honest
+  /// answer to "clear twice", and nothing downstream is invalidated.
+  ///
+  /// **Nothing operational is deleted here.** The only ids that ever reach this
+  /// method are announcement history rows (`clearableNotificationIds` decides
+  /// that, from the feed itself); shifts, stock items, conflicts and outbox
+  /// operations are untouched, and the conditions they raise re-derive on the
+  /// next load exactly as before.
+  Future<Result<int>> clear(Iterable<String> ids) async {
+    final known = _current;
+    final added = {
+      for (final id in ids)
+        if (!known.contains(id)) id,
+    };
+    if (added.isEmpty) return const Success(0);
+
+    try {
+      await ref.read(notificationHistoryStoreProvider).clear(added);
+    } catch (_) {
+      return const Failure(S.notificationsClearFailed);
+    }
+
+    state = AsyncData({...known, ...added});
+    return Success(added.length);
+  }
+}
+
+final notificationClearedIdsProvider =
+    AsyncNotifierProvider<NotificationHistoryController, Set<String>>(
+  NotificationHistoryController.new,
+);
+
+/// The announcement half of the feed.
+///
+/// Read from the announcement repository through its own provider rather than
+/// hard-coded into the Notifications Center — the rule that every row enters
+/// through a source seam. Cleared ids are applied here, at the point the rows
+/// are built, so a cleared announcement never reaches the merge at all.
+///
+/// An unreadable announcement source yields an empty list (see
+/// [announcementsOf]): one failing source must not blank a feed that still has
+/// shifts, stock and the user's own queued writes to show.
+final announcementNotificationsProvider = Provider.autoDispose
+    .family<List<AppNotification>, String>((ref, detachmentId) {
+  return buildAnnouncementNotifications(
+    detachmentId: detachmentId,
+    announcements: ref.watch(visibleAnnouncementsProvider(detachmentId)),
+    clearedIds:
+        ref.watch(notificationClearedIdsProvider).valueOrNull ?? const {},
+  );
+});
+
 /// The client-owned half of the feed: the user's own queued writes.
 ///
 /// Read straight off the outbox, so it is exactly as true with no network as
@@ -116,10 +204,19 @@ final notificationFeedProvider = Provider.autoDispose
   final readIds =
       ref.watch(notificationReadIdsProvider).valueOrNull ?? const {};
   final local = ref.watch(syncNotificationsProvider);
+  // The third half. Announcements are records rather than conditions, so they
+  // are merged in beside the derived rows and the outbox rather than being
+  // asked of the record repository — which owns no announcement and never will.
+  final announcementsEnabled = ref.watch(
+    tenantFeatureAvailableProvider(TenantFeatureKey.announcements),
+  );
+  final announcements = announcementsEnabled
+      ? ref.watch(announcementNotificationsProvider(detachmentId))
+      : const <AppNotification>[];
 
   List<AppNotification> compose(List<AppNotification> remote) => applyReadState(
         visibleNotifications(
-          [...remote, ...local],
+          [...remote, ...local, ...announcements],
           detachmentId: detachmentId,
           capabilities: capabilities,
         ),
@@ -161,3 +258,17 @@ final unreadNotificationCountProvider =
     offline: (cached) => cached == null ? 0 : unreadCount(cached),
   );
 });
+
+/// The ids in [items] an administrator may clear from the history.
+///
+/// **Announcements only, and by construction rather than by convention.** Every
+/// other kind in the feed is a projection of a live condition: clearing one
+/// would either lie — the condition is still true and the row re-derives on the
+/// next load — or, if it were made to stick, would mean deleting the shift, the
+/// stock item or the outbox operation behind it. Neither is something a "clear
+/// notifications" button is allowed to do, so this function is the one place
+/// that decides what the action can even reach.
+List<String> clearableNotificationIds(List<AppNotification> items) => [
+      for (final n in items)
+        if (n.kind == NotificationKind.announcement) n.id,
+    ];

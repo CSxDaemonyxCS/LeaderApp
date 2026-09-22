@@ -11,6 +11,7 @@ import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
+import '../../../core/widgets/forward_chevron.dart';
 import '../../../core/widgets/skeleton.dart';
 import '../../../l10n/strings.dart';
 import '../data/conflict_outbox_resolver.dart';
@@ -250,7 +251,7 @@ class _ReviewCard extends StatelessWidget {
           ),
           if (reviewable) ...[
             const SizedBox(width: AppSpacing.sm),
-            Icon(Icons.chevron_left_rounded, color: c.ink3),
+            const ForwardChevron(),
           ],
         ],
       ),

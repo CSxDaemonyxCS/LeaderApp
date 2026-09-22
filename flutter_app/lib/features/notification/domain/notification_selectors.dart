@@ -1,6 +1,7 @@
 import '../../../core/access/capability.dart';
 import '../../../core/sync/pending_operation.dart';
 import '../../../core/sync/sync_state.dart';
+import '../../announcement/domain/announcement_models.dart';
 import '../../conflict/domain/needs_review_item.dart';
 import '../../detachment/domain/storage_status.dart';
 import '../../inventory/domain/inventory_models.dart';
@@ -222,6 +223,48 @@ List<AppNotification> buildSyncNotifications({
   return out;
 }
 
+/// Announcement-derived notifications for one detachment.
+///
+/// The Notifications Center is the announcement system's **history** surface,
+/// so this builder is deliberately indiscriminate about lifetime: an expired
+/// announcement and a withdrawn one produce a row exactly like an active one.
+/// Losing a Home promotion, running past an expiry, or being withdrawn all stop
+/// *placements*; none of them un-tells a detachment something it was told. The
+/// only thing that removes one of these rows is an administrator clearing
+/// notification history deliberately, which the caller applies through
+/// [clearedIds].
+///
+/// Each row is built already read — announcements carry no read state at all
+/// (see [AppNotification.tracksReadState]).
+List<AppNotification> buildAnnouncementNotifications({
+  required String detachmentId,
+  required List<Announcement> announcements,
+  Set<String> clearedIds = const {},
+}) {
+  final out = <AppNotification>[];
+
+  for (final a in announcements) {
+    if (!a.targets(detachmentId)) continue;
+    final id = notificationId(NotificationKind.announcement, a.id);
+    if (clearedIds.contains(id)) continue;
+    out.add(AppNotification(
+      id: id,
+      kind: NotificationKind.announcement,
+      // The moment the notice was sent. Real, on the record, and what puts an
+      // announcement in the right day group rather than pretending it is
+      // today's.
+      occurredAt: a.publishedAt,
+      // The row shows the notice itself — the text *is* the record. Truncated
+      // for scanning by the row; the full text is one tap away.
+      recordLabel: a.text,
+      target: AnnouncementTarget(announcementId: a.id),
+      isRead: true,
+    ));
+  }
+
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Access, read state, ordering.
 // ---------------------------------------------------------------------------
@@ -245,6 +288,10 @@ Set<String> requiredCapabilities(NotificationKind kind) => switch (kind) {
           Cap.shiftAttendanceOverride,
         },
       NotificationKind.shiftStartingSoon => const {Cap.detachmentView},
+      // Seeing a notice addressed to a detachment follows from being able to
+      // see that detachment, which any scoped grant implies. There is
+      // deliberately no `announcement.view` key — it would gate nothing.
+      NotificationKind.announcement => const {Cap.detachmentView},
       NotificationKind.stockDepleted ||
       NotificationKind.stockLow ||
       NotificationKind.stockExpiring =>
@@ -285,15 +332,22 @@ bool _visible(
 }
 
 /// Stamps the stored read set onto a freshly derived feed.
+///
+/// Rows that do not track read state are passed through untouched — an
+/// announcement is built read and stays read, whatever is or is not in the
+/// stored set.
 List<AppNotification> applyReadState(
   List<AppNotification> items,
   Set<String> readIds,
 ) =>
     [
       for (final n in items)
-        n.isRead == readIds.contains(n.id)
-            ? n
-            : n.copyWith(isRead: readIds.contains(n.id)),
+        if (!n.tracksReadState)
+          n
+        else
+          n.isRead == readIds.contains(n.id)
+              ? n
+              : n.copyWith(isRead: readIds.contains(n.id)),
     ];
 
 /// How many rows still want the user's attention — the number the badge
@@ -302,7 +356,7 @@ List<AppNotification> applyReadState(
 int unreadCount(List<AppNotification> items) {
   var n = 0;
   for (final item in items) {
-    if (!item.isRead) n++;
+    if (item.tracksReadState && !item.isRead) n++;
   }
   return n;
 }
@@ -416,6 +470,18 @@ class OpenSyncScreen extends NotificationDestination {
   const OpenSyncScreen();
 }
 
+/// One announcement, as a read-only context view over the row itself.
+///
+/// The only destination in this file that is not another screen: an
+/// announcement has no record elsewhere to open, so what a tap gives is the
+/// full text the row had to truncate. The alternative — sending the reader to
+/// one of the detachments the notice happens to name — is precisely the
+/// arbitrary navigation Point 14 §21 forbids.
+class OpenAnnouncement extends NotificationDestination {
+  const OpenAnnouncement({required this.announcementId});
+  final String announcementId;
+}
+
 /// Resolves a row's destination against the session's grants.
 ///
 /// The gate degrades rather than blocks: a volunteer who may see that a shift
@@ -443,6 +509,8 @@ NotificationDestination destinationFor(
       return const OpenNeedsReview();
     case SyncTarget():
       return const OpenSyncScreen();
+    case AnnouncementTarget(:final announcementId):
+      return OpenAnnouncement(announcementId: announcementId);
   }
 }
 

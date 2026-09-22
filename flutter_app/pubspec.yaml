@@ -19,6 +19,25 @@ dependencies:
   printing: ^5.14.3
   # QR display for MFA setup (no camera, no scanning).
   qr_flutter: ^4.1.0
+  # Opening a support address in the user's own mail or Telegram app
+  # (`/more/about`). The official Flutter-team plugin, used through the single
+  # `ExternalLinkLauncher` seam in `core/platform/` — no widget calls it
+  # directly, and nothing else in the app launches a URL.
+  url_launcher: ^6.3.2
+  # Durable local key/value storage — the ONE persistence mechanism in this
+  # app, reached only through `core/storage/local_store.dart`. Added for the
+  # development demo-persona record (`DemoSessionStore`), which has to survive
+  # a real process restart; the theme, motion-level and forced-upgrade seams
+  # are written against the same `LocalStore` and can be moved onto it without
+  # a second storage architecture. Official Flutter-team plugin, same class as
+  # `url_launcher` above, and used through a single seam for the same reason.
+  shared_preferences: ^2.5.3
+  # Provider identity only. The ID token is exchanged immediately with the
+  # MTM backend and is never persisted or decoded for authorization locally.
+  google_sign_in: ^7.2.0
+  # Security-sensitive auth/session material uses the platform keystore /
+  # keychain. It must never share the ordinary preferences store above.
+  flutter_secure_storage: ^10.3.3
 
 dev_dependencies:
   flutter_test:
@@ -28,10 +47,14 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
-  # The MTM mark — the artwork the legacy `medical_team` app ships as
-  # `mtm_logo_full.png`, bundled so in-app surfaces (the forced-upgrade
-  # screen) can draw it. NOT the launcher icon: `android/.../mipmap-*` still
-  # holds the stock Flutter mark.
+  # Brand artwork. The three approved Leader marks — `leader_logo_*.png`,
+  # one per `BrandLogo` variant (`lib/core/brand/brand_logo.dart`) — plus the
+  # legacy `mtm_logo_full.png`, kept bundled but no longer drawn.
+  #
+  # `leader_logo_clean_layer.png` is the default in-app mark AND the artwork
+  # the Android launcher icon is generated from
+  # (`android/app/src/main/res/mipmap-*`). The launcher icon is fixed for
+  # everyone; only the in-app mark follows the user's choice.
   assets:
     - assets/brand/
 

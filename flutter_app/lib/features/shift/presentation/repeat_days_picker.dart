@@ -63,7 +63,7 @@ class RepeatDaysPicker extends StatelessWidget {
     final c = context.c;
     final repeats = selected.length > 1;
     final days = [
-      for (int i = 0; i < windowDays; i++) firstDay.add(Duration(days: i)),
+      for (int i = 0; i < windowDays; i++) addDays(firstDay, i),
     ];
 
     return Container(
@@ -164,7 +164,9 @@ class _DayPill extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              AppDate.weekdayOf(day).substring(0, 2),
+              // The distinct calendar initial — `weekdayOf(...).substring(0,
+              // 2)` is «ال» for all seven days.
+              AppDate.weekdayInitialOf(day),
               style: TextStyle(
                 color: selected ? c.primaryInk : c.ink3,
                 fontSize: 10,

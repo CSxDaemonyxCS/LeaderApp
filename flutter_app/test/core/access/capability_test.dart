@@ -8,10 +8,13 @@ import 'package:mtm/features/auth/domain/auth_models.dart';
 /// other — decide which, do not just update the number.
 void main() {
   group('key partition', () {
-    test('29 keys, split 10 global / 19 scoped', () {
-      expect(Cap.all.length, 29);
+    // 29 at the 2026-09-02 ruling; `announcement.publish` was added
+    // 2026-09-07 for the internal announcement system (`CAPABILITIES.md` §10)
+    // and is per-detachment, so the scoped half is the one that grew.
+    test('30 keys, split 10 global / 20 scoped', () {
+      expect(Cap.all.length, 30);
       expect(Cap.global.length, 10);
-      expect(Cap.scoped.length, 19);
+      expect(Cap.scoped.length, 20);
     });
 
     test('global and scoped are disjoint and cover everything', () {
@@ -63,6 +66,11 @@ void main() {
         Cap.workshopPaymentRecord,
         Cap.adminManage,
         Cap.orgEdit,
+        // Added 2026-09-07 and deliberately withheld: Point 14 §4 rules that a
+        // scoped administrator may publish announcements **only when granted**
+        // the key, so it fails closed like every key added after a preset was
+        // written. Granting it is one deliberate act on the admin screen.
+        Cap.announcementPublish,
       };
       final keys = CapabilityPreset.subAdmin.keys;
       expect(keys, hasLength(19));
@@ -204,18 +212,29 @@ void main() {
       expect(a, isNot(c));
     });
 
-    test('AuthUser carries capabilities through JSON, with no role field', () {
+    // `AuthUser.role` was added for Point 2. It classifies the product
+    // surface — platform, or one paying team — and it is deliberately **not**
+    // a second source of authority: the grant still round-trips
+    // independently, and nothing in `Capabilities` consults the role. The
+    // preset the account was created from is still not recoverable from the
+    // payload, which is the property that stopped a role being an authority
+    // check in the first place.
+    test('AuthUser carries its capability grant through JSON beside the role',
+        () {
       final user = AuthUser(
         id: 'u_1',
         name: 'ليلى ياسين',
         email: 'l.yaseen@mtm.org',
+        role: AuthRole.mainAdmin,
+        saasTenantId: 'saas_test',
         capabilities: CapabilityPreset.mainAdmin.grant(detachments: ['d_homs']),
         orgName: 'فريق الإسعاف التطوعي · دمشق',
         avatarInitials: 'لي',
       );
       final json = user.toJson();
-      expect(json, isNot(contains('role')));
+      expect(json['role'], 'main_admin');
       expect(AuthUser.fromJson(json).capabilities, user.capabilities);
+      expect(AuthUser.fromJson(json).role, AuthRole.mainAdmin);
     });
   });
 }

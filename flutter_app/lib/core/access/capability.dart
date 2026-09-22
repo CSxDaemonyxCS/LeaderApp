@@ -1,6 +1,7 @@
 /// Capability keys and the single resolver every access check goes through.
 ///
 /// Ruled 2026-09-02 — see `CAPABILITIES.md` §0. 29 keys, three presets.
+/// `announcement.publish` was added 2026-09-07 (§10) — 30.
 ///
 /// SECURITY CONTRACT — read this before adding a check anywhere:
 ///
@@ -16,7 +17,7 @@
 /// verbatim. Keep it importable from a non-Flutter target.
 library;
 
-/// The 29 capability keys.
+/// The 30 capability keys.
 ///
 /// A capability is a plain string. The signed-in profile carries a *set* of
 /// them as runtime data; there is deliberately no role enum. Roles exist only
@@ -84,6 +85,24 @@ abstract final class Cap {
   // ---------- Statistics ----------
   static const statsView = 'stats.view';
 
+  // ---------- Announcements ----------
+  /// Publish, withdraw and manage an internal announcement *inside one
+  /// detachment*.
+  ///
+  /// Added 2026-09-07 for the internal announcement system. Per-detachment,
+  /// not global, because an announcement is targeted at detachments and the
+  /// question the target picker asks is "may this session publish **here**".
+  /// A session holding it globally may target every detachment it can see; a
+  /// scoped session may target only the detachments its grant names.
+  ///
+  /// There is deliberately **no** matching `announcement.view` key. Reading an
+  /// announcement targeted at a detachment is implied by being able to see
+  /// that detachment at all, which is exactly what [detachmentView] already
+  /// says — the same rule `shiftStartingSoon` follows in the notification
+  /// feed. A second key would gate nothing, which is why the three `*.view`
+  /// keys were dropped on 2026-09-02.
+  static const announcementPublish = 'announcement.publish';
+
   // ---------- Administration ----------
   static const adminManage = 'admin.manage';
   static const orgEdit = 'org.edit';
@@ -128,6 +147,7 @@ abstract final class Cap {
     inventoryAdjust,
     inventoryItemManage,
     statsView,
+    announcementPublish,
   };
 
   /// Every key this build understands. A key outside this set is **denied**,
@@ -166,6 +186,21 @@ class Capabilities {
 
   final Set<String> global;
   final Map<String, Set<String>> scoped;
+
+  /// Whether this session holds **any** capability at all, anywhere.
+  ///
+  /// The one place that question is answered, so the startup classifier does
+  /// not have to know how a grant is shaped. A scoped entry with an empty key
+  /// set counts as nothing held — it names a detachment and grants nothing in
+  /// it, which is indistinguishable from not being named at all.
+  ///
+  /// **What this is not.** It is not "may do X" and nothing may branch on it
+  /// to allow an action; `canIn` is still the single resolver. It exists to
+  /// tell a session with an empty grant from one with a grant, so the former
+  /// gets a screen that explains itself instead of an app full of hidden
+  /// controls.
+  bool get hasAny =>
+      global.isNotEmpty || scoped.values.any((keys) => keys.isNotEmpty);
 
   /// Resolve an organisation-level capability.
   ///
@@ -207,6 +242,18 @@ class Capabilities {
   /// as [Cap.shiftRoute].
   bool canAnyIn(String? detachmentId, Iterable<String> keys) =>
       keys.any((key) => canIn(detachmentId, key));
+
+  /// True when [key] is held **anywhere** — globally, or inside at least one
+  /// named detachment.
+  ///
+  /// The question a surface that is not itself detachment-scoped has to ask.
+  /// The announcement management screen and its route guard are the first
+  /// callers: the screen spans every detachment the session may publish in,
+  /// so `canIn(null, key)` is the wrong question — it would refuse a scoped
+  /// admin who genuinely holds the key in one detachment. Still the single
+  /// resolver: every branch below delegates to [canIn].
+  bool canAnywhere(String key) =>
+      canIn(null, key) || scoped.keys.any((id) => canIn(id, key));
 
   /// Detachment ids this session can see, in grant order. Empty for a session
   /// scoped to nothing — which for a Main Admin is normal, since their grants

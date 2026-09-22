@@ -4,17 +4,24 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/access/capability.dart';
 import '../../../../core/access/capability_guard.dart';
-import '../../../../core/format/app_date.dart';
+import '../../../../core/chart/series_card.dart';
+import '../../../../core/chart/series_scale.dart';
+import '../../../../core/format/app_number.dart';
+import '../../../../core/format/app_time.dart';
 import '../../../../core/motion/animated_counter.dart';
 import '../../../../core/result/result.dart';
-import '../../../../core/motion/motion_tokens.dart';
 import '../../../../core/motion/press_scale.dart';
 import '../../../../core/theme/app_palette.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/time/clock.dart';
+import '../../../../core/widgets/app_meta.dart';
 import '../../../../core/widgets/async_result.dart';
 import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/forward_chevron.dart';
+import '../../../../core/widgets/reading_column.dart';
 import '../../../../core/widgets/refresh_indicator.dart';
+import '../../../../core/widgets/tile_grid.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../l10n/strings.dart';
 import '../../../inventory/data/inventory_providers.dart';
@@ -35,7 +42,11 @@ import '../../domain/detachment_models.dart';
 /// screen can never quote a number the tab beside it contradicts.
 ///
 /// Gated whole: without `stats.view` there is nothing on it a session may
-/// see, so it renders a denied state rather than an empty chart.
+/// see, so it renders a denied state rather than an empty chart. The shell no
+/// longer offers the tab to such a session; this state is what a direct link
+/// lands on, and it says *permission*, never "no statistics yet" — the
+/// empty-data sentence would have told a scoped administrator to wait for
+/// numbers that were never going to appear (Point 16).
 class DetachmentStatsTab extends ConsumerWidget {
   const DetachmentStatsTab({super.key, required this.detachmentId});
 
@@ -47,9 +58,10 @@ class DetachmentStatsTab extends ConsumerWidget {
       capability: Cap.statsView,
       detachmentId: detachmentId,
       denied: const EmptyState(
+        key: Key('detachment-stats-not-permitted'),
         icon: Icons.lock_outline_rounded,
-        title: S.noStats,
-        body: S.noStatsSub,
+        title: S.statsNotPermittedTitle,
+        body: S.statsNotPermittedBody,
       ),
       child: AppRefreshIndicator(
         onRefresh: () =>
@@ -58,30 +70,46 @@ class DetachmentStatsTab extends ConsumerWidget {
           value: ref.watch(detachmentStatsProvider(detachmentId)),
           onRetry: () => ref.invalidate(detachmentStatsProvider),
           builder: (context, stats, stale) => FloatingNavPadding(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.lg),
-              children: [
-                const SectionHeader(title: S.statsOverview),
-                _LiveTiles(detachmentId: detachmentId),
-                const SizedBox(height: AppSpacing.md),
-                _ExportCard(
-                  onTap: () => context.push('/detachment/$detachmentId/report'),
-                ),
-                _AttendanceSection(detachmentId: detachmentId),
-                _Series(
-                  title: S.statsCoverage,
-                  values: stats.coverageSeries,
-                  suffix: '٪',
-                  toneOk: false,
-                ),
-                _Series(
-                  title: S.statsStock,
-                  values: stats.stockSeries,
-                  suffix: '',
-                  toneOk: false,
-                ),
-              ],
+            // Class B of the measure policy: an operational screen of grouped
+            // cards and rows. Uncapped, the member records ran a name at one
+            // edge of a 900 dp window and its counts at the other.
+            child: ReadingColumn(
+              maxWidth: kContentMaxWidth,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.lg),
+                children: [
+                  const SectionHeader(title: S.statsOverview),
+                  _LiveTiles(detachmentId: detachmentId),
+                  const SizedBox(height: AppSpacing.md),
+                  _ExportCard(
+                    onTap: () =>
+                        context.push('/detachment/$detachmentId/report'),
+                  ),
+                  _AttendanceSection(detachmentId: detachmentId),
+                  // Two series, two units, two stated domains — and never one
+                  // shared scale. Coverage is a proportion and is drawn
+                  // against 0–100 whatever its own peak is; consumption is a
+                  // tally and is drawn against a round ceiling above its peak,
+                  // which the card prints.
+                  SeriesCard(
+                    id: 'coverage',
+                    title: S.statsCoverage,
+                    hint: S.statsCoverageHint,
+                    plot: SeriesPlot(stats.coverageSeries,
+                        unit: SeriesUnit.percent),
+                    endsOn: dateOnly(ref.watch(clockProvider)()),
+                  ),
+                  SeriesCard(
+                    id: 'stock',
+                    title: S.statsStock,
+                    hint: S.statsStockHint,
+                    plot:
+                        SeriesPlot(stats.stockSeries, unit: SeriesUnit.count),
+                    endsOn: dateOnly(ref.watch(clockProvider)()),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -116,10 +144,13 @@ class _AttendanceSectionState extends ConsumerState<_AttendanceSection> {
   @override
   Widget build(BuildContext context) {
     final c = context.c;
-    final today = dateOnly(DateTime.now());
+    // Through the clock provider, like the dashboard: the range this section
+    // asks for is «the last N days ending today», and a screen that reads the
+    // wall clock directly cannot be rendered or tested at a fixed instant.
+    final today = dateOnly(ref.watch(clockProvider)());
     final query = AttendanceStatsQuery(
       detachmentId: widget.detachmentId,
-      from: today.subtract(Duration(days: _range.days - 1)),
+      from: addDays(today, -(_range.days - 1)),
       to: today,
       memberId: _memberId,
     );
@@ -178,10 +209,10 @@ class _AttendanceSectionState extends ConsumerState<_AttendanceSection> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Wrap(
-                  spacing: AppSpacing.sm,
-                  runSpacing: AppSpacing.sm,
-                  children: [
+                TileGrid(
+                  minTileWidth: 150,
+                  columnChoices: const [2, 4],
+                  tiles: [
                     _AttendanceMetric(S.presentTotal, statistics.presentCount),
                     _AttendanceMetric(S.absentTotal, statistics.absentCount),
                     _AttendanceMetric(
@@ -191,7 +222,7 @@ class _AttendanceSectionState extends ConsumerState<_AttendanceSection> {
                     _AttendanceMetric(
                       S.attendancePercent,
                       statistics.attendancePercent,
-                      suffix: '٪',
+                      percent: true,
                     ),
                   ],
                 ),
@@ -260,32 +291,62 @@ class _ChoiceFilter extends StatelessWidget {
   }
 }
 
+/// One total from the attendance range.
+///
+/// It used to read «إجمالي الحضور · ١٠٠» in a fixed 148 dp box. Beside
+/// Arabic-Indic numerals that dot is «٠», so the card said "total present,
+/// zero, one hundred". The label and the figure are now stacked — a label is
+/// not a fact on a meta line, it is the name of the fact under it — and the
+/// box sizes to its content instead of clipping a long label at a width
+/// chosen for a short one.
 class _AttendanceMetric extends StatelessWidget {
-  const _AttendanceMetric(this.label, this.value, {this.suffix = ''});
+  const _AttendanceMetric(this.label, this.value, {this.percent = false});
 
   final String label;
   final int value;
-  final String suffix;
+
+  /// Renders through the one percentage path rather than appending `'٪'`.
+  final bool percent;
 
   @override
   Widget build(BuildContext context) {
     final c = context.c;
     return Container(
-      width: 148,
-      padding: const EdgeInsets.all(AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
       decoration: BoxDecoration(
         color: c.surface,
         border: Border.all(color: c.line),
         borderRadius: BorderRadius.circular(AppRadii.md),
       ),
-      child: Text(
-        '$label · ${toArabicIndic('$value')}$suffix',
-        style: TextStyle(color: c.ink2, fontSize: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(color: c.ink3, fontSize: 11),
+          ),
+          const SizedBox(height: 2),
+          TabularDigits(
+            percent ? AppNumber.percent(value) : AppNumber.count(value),
+            style: AppTypography.digits(c.ink, size: 16),
+          ),
+        ],
       ),
     );
   }
 }
 
+/// One member's totals and their individual records.
+///
+/// Both lines here were ` · `-joined strings, and both sat next to
+/// Arabic-Indic numerals: «إجمالي الحضور ١ · إجمالي الغياب ٠ · الحضور المكتمل
+/// ١» rendered as a run of five identical dots of which three were values,
+/// and the record line put a dot immediately before a clock that begins «٠».
+/// They are [AppMeta] lines now: the rule is drawn, not written.
 class _MemberAttendanceCard extends StatelessWidget {
   const _MemberAttendanceCard({required this.member});
 
@@ -310,22 +371,22 @@ class _MemberAttendanceCard extends StatelessWidget {
               style: TextStyle(
                   color: c.ink, fontSize: 14, fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
-          Text(
-            '${S.presentTotal} ${toArabicIndic('${member.presentCount}')} · '
-            '${S.absentTotal} ${toArabicIndic('${member.absentCount}')} · '
-            '${S.completedTotal} ${toArabicIndic('${member.completedCount}')}',
-            style: TextStyle(color: c.ink3, fontSize: 11),
-          ),
+          AppMeta(parts: [
+            AppMetaText.total(S.presentTotal, member.presentCount),
+            AppMetaText.total(S.absentTotal, member.absentCount),
+            AppMetaText.total(S.completedTotal, member.completedCount),
+          ]),
           for (final record in member.records)
             Padding(
               padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                '${AppDate.dayMonth(record.shiftDate)} · '
-                '${_statsAttendanceLabel(record.status)}'
-                '${record.checkInAt == null ? '' : ' · ${AppDate.time(record.checkInAt!)}'}'
-                '${record.checkOutAt == null ? '' : ' – ${AppDate.time(record.checkOutAt!)}'}',
-                style: TextStyle(color: c.ink2, fontSize: 11),
-              ),
+              child: AppMeta(parts: [
+                AppMetaText.day(record.shiftDate),
+                AppMetaText(_statsAttendanceLabel(record.status)),
+                if (record.checkInAt != null)
+                  AppMetaText.code(
+                    AppTime.clockRange(record.checkInAt!, record.checkOutAt),
+                  ),
+              ]),
             ),
         ],
       ),
@@ -347,11 +408,21 @@ String _statsAttendanceLabel(AttendanceState state) => switch (state) {
       AttendanceState.absent => S.absent,
     };
 
-/// Four counts read straight from the other tabs' providers.
+/// Four figures read straight from the other tabs' providers.
 ///
 /// Each tile renders its own value the moment its provider resolves, rather
 /// than the whole row waiting on the slowest of them — three of these are
 /// separate mock round-trips.
+///
+/// **Two things the render changed.** The four tiles were a fixed `Row`, and
+/// at 320 dp / 1.6× that left «أدوية منخفضة» drawn as «أدوية…» and «تغطية
+/// الأسبوع» as «تغطي…»: the figures survived and their meanings did not,
+/// which is the same defect as an unlabelled chart. They reflow to two
+/// columns when the row cannot hold four. And the coverage tile printed
+/// «١٠٠٪» for a week with no shifts in it, because `WeekSummary.coveragePercent`
+/// answers 100 when nothing is needed — true as a fraction, false as a
+/// statement. A week with no shifts has no coverage to report, so the tile
+/// says so rather than reporting a perfect one.
 class _LiveTiles extends ConsumerWidget {
   const _LiveTiles({required this.detachmentId});
 
@@ -363,7 +434,7 @@ class _LiveTiles extends ConsumerWidget {
     final week = ref
         .watch(weekShiftsProvider(WeekQuery(
           detachmentId: detachmentId,
-          weekStart: startOfWeek(DateTime.now()),
+          weekStart: startOfWeek(ref.watch(clockProvider)()),
         )))
         .valueOrNull;
     final stock = ref.watch(inventoryListProvider(detachmentId)).valueOrNull;
@@ -372,44 +443,49 @@ class _LiveTiles extends ConsumerWidget {
     final shifts = _dataOf(week);
     final items = _dataOf(stock);
     final summary = shifts == null ? null : WeekSummary.of(shifts);
+    final lowCount =
+        items?.where((i) => i.level != StockLevel.ok).length ?? 0;
 
-    return Row(children: [
-      Expanded(
-        child: _Tile(
-          icon: Icons.groups_rounded,
-          label: S.statsMembers,
-          value: members == null ? null : '${members.length}',
-        ),
+    final tiles = <Widget>[
+      _Tile(
+        icon: Icons.groups_rounded,
+        label: S.statsMembers,
+        value: members == null ? null : AppNumber.count(members.length),
       ),
-      const SizedBox(width: AppSpacing.sm),
-      Expanded(
-        child: _Tile(
-          icon: Icons.event_note_rounded,
-          label: S.statsShifts,
-          value: summary == null ? null : '${summary.shiftCount}',
-        ),
+      _Tile(
+        icon: Icons.event_note_rounded,
+        label: S.statsShifts,
+        value: summary == null ? null : AppNumber.count(summary.shiftCount),
       ),
-      const SizedBox(width: AppSpacing.sm),
-      Expanded(
-        child: _Tile(
-          icon: Icons.percent_rounded,
-          label: S.weekCoverage,
-          value: summary == null ? null : '${summary.coveragePercent}',
-          suffix: '٪',
-        ),
+      _Tile(
+        icon: Icons.donut_small_rounded,
+        label: S.weekCoverage,
+        // Resolved, not loading: the week loaded and simply has nothing to
+        // measure. An em dash is the honest reading.
+        value: summary == null
+            ? null
+            : summary.shiftCount == 0
+                ? '—'
+                : AppNumber.percent(summary.coveragePercent),
+        unavailable: summary != null && summary.shiftCount == 0,
       ),
-      const SizedBox(width: AppSpacing.sm),
-      Expanded(
-        child: _Tile(
-          icon: Icons.inventory_2_rounded,
-          label: S.stockLow,
-          value: items == null
-              ? null
-              : '${items.where((i) => i.level != StockLevel.ok).length}',
-          warn: items != null && items.any((i) => i.level != StockLevel.ok),
-        ),
+      _Tile(
+        icon: Icons.inventory_2_rounded,
+        label: S.stockLow,
+        value: items == null ? null : AppNumber.count(lowCount),
+        warn: lowCount > 0,
       ),
-    ]);
+    ];
+
+    // Four across while a tile can still hold «أدوية منخفضة» on two lines,
+    // two across below that. Never one and never three: a full-width metric
+    // tile reads as a headline rather than as one of four comparable
+    // figures, and three columns would split four figures 3 + 1.
+    return TileGrid(
+      tiles: tiles,
+      minTileWidth: 82,
+      columnChoices: const [2, 4],
+    );
   }
 
   static T? _dataOf<T>(Result<T>? result) => result?.when(
@@ -424,58 +500,69 @@ class _Tile extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
-    this.suffix = '',
     this.warn = false,
+    this.unavailable = false,
   });
 
   final IconData icon;
   final String label;
 
-  /// Null while the underlying provider is still resolving.
+  /// Null while the underlying provider is still resolving. Already in the
+  /// app's numerals when it is not.
   final String? value;
-  final String suffix;
   final bool warn;
+
+  /// The figure resolved to "there is nothing to measure" rather than to a
+  /// number. Drawn quietly so it does not read as a reading of zero.
+  final bool unavailable;
 
   @override
   Widget build(BuildContext context) {
     final c = context.c;
-    return Container(
-      padding: const EdgeInsets.symmetric(
-          vertical: AppSpacing.md, horizontal: AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: c.surface,
-        border: Border.all(color: c.line),
-        borderRadius: BorderRadius.circular(AppRadii.lg),
-      ),
-      child: Column(children: [
-        Icon(icon, size: 17, color: warn ? c.warn : c.ink3),
-        const SizedBox(height: 6),
-        SizedBox(
-          height: 24,
-          child: value == null
-              ? Center(
-                  child: SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: c.ink3),
+    final tone = warn ? c.warn : (unavailable ? c.ink3 : c.ink);
+    return Semantics(
+      container: true,
+      label: '$label، ${value ?? S.statsLoadingValue}',
+      child: ExcludeSemantics(
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+              vertical: AppSpacing.md, horizontal: AppSpacing.sm),
+          decoration: BoxDecoration(
+            color: c.surface,
+            border: Border.all(color: c.line),
+            borderRadius: BorderRadius.circular(AppRadii.lg),
+          ),
+          child: Column(children: [
+            Icon(icon, size: 17, color: warn ? c.warn : c.ink3),
+            const SizedBox(height: 6),
+            value == null
+                ? SizedBox(
+                    height: 24,
+                    child: Center(
+                      child: SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: c.ink3),
+                      ),
+                    ),
+                  )
+                : FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: TabularDigits(
+                      value!,
+                      style: AppTypography.digits(tone, size: 19),
+                    ),
                   ),
-                )
-              : Center(
-                  child: TabularDigits(
-                    '${toArabicIndic(value!)}$suffix',
-                    style:
-                        AppTypography.digits(warn ? c.warn : c.ink, size: 19),
-                  ),
-                ),
+            const SizedBox(height: 2),
+            Text(label,
+                style: TextStyle(color: c.ink3, fontSize: 11, height: 1.3),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis),
+          ]),
         ),
-        const SizedBox(height: 2),
-        Text(label,
-            style: TextStyle(color: c.ink3, fontSize: 11),
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis),
-      ]),
+      ),
     );
   }
 }
@@ -515,126 +602,9 @@ class _ExportCard extends StatelessWidget {
               ],
             ),
           ),
-          Icon(Icons.chevron_left_rounded, color: c.info),
+          ForwardChevron(color: c.info),
         ]),
       ),
     );
-  }
-}
-
-class _Series extends StatelessWidget {
-  const _Series({
-    required this.title,
-    required this.values,
-    required this.suffix,
-    required this.toneOk,
-  });
-
-  final String title;
-  final List<int> values;
-  final String suffix;
-  final bool toneOk;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.c;
-    final max = values.isEmpty ? 0 : values.reduce((a, b) => a > b ? a : b);
-    final avg = values.isEmpty
-        ? 0
-        : (values.reduce((a, b) => a + b) / values.length).round();
-    final bar = toneOk ? c.ok : c.primary;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SectionHeader(title: '$title · ${S.last7Days}'),
-        Container(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          decoration: BoxDecoration(
-            color: c.surface,
-            border: Border.all(color: c.line),
-            borderRadius: BorderRadius.circular(AppRadii.lg),
-          ),
-          child: Column(children: [
-            SizedBox(
-              height: 96,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  for (int i = 0; i < values.length; i++) ...[
-                    Expanded(
-                      child: _Bar(
-                        // Guard against a flat all-zero series.
-                        fraction: max == 0 ? 0 : values[i] / max,
-                        color: bar,
-                      ),
-                    ),
-                    if (i != values.length - 1) const SizedBox(width: 6),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Row(children: [
-              _Metric(
-                label: S.highest,
-                value: '${toArabicIndic(max.toString())}$suffix',
-              ),
-              const SizedBox(width: AppSpacing.lg),
-              _Metric(
-                label: S.average,
-                value: '${toArabicIndic(avg.toString())}$suffix',
-              ),
-            ]),
-          ]),
-        ),
-      ],
-    );
-  }
-}
-
-class _Bar extends StatelessWidget {
-  const _Bar({required this.fraction, required this.color});
-
-  final double fraction;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.c;
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0, end: fraction.clamp(0, 1)),
-      duration: effectiveValueDuration(context, MotionTokens.progressFill),
-      curve: effectiveCurve(context, MotionTokens.enter),
-      builder: (context, v, _) => Align(
-        alignment: Alignment.bottomCenter,
-        child: FractionallySizedBox(
-          heightFactor: v == 0 ? 0.02 : v,
-          child: Container(
-            decoration: BoxDecoration(
-              color: v == 0 ? c.surface3 : color,
-              borderRadius: BorderRadius.circular(AppRadii.sm),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Metric extends StatelessWidget {
-  const _Metric({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.c;
-    return Row(children: [
-      Text(label, style: TextStyle(color: c.ink3, fontSize: 12)),
-      const SizedBox(width: 6),
-      Text(value, style: AppTypography.digits(c.ink, size: 14)),
-    ]);
   }
 }

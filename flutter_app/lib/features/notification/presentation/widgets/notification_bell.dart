@@ -58,7 +58,7 @@ class _Bell extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.c;
     return Semantics(
-      label: '${S.notificationsOpen} · ${unreadNotificationsLabel(count)}',
+      label: '${S.notificationsOpen}، ${unreadNotificationsLabel(count)}',
       excludeSemantics: true,
       child: Stack(
         clipBehavior: Clip.none,
@@ -66,31 +66,48 @@ class _Bell extends StatelessWidget {
           const Icon(Icons.notifications_none_rounded),
           if (count > 0)
             PositionedDirectional(
-              top: -3,
-              end: -5,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                decoration: BoxDecoration(
-                  color: c.crit,
-                  borderRadius: BorderRadius.circular(AppRadii.pill),
-                  // Ringed in the bar's own ground so the badge reads as
-                  // sitting on the bell rather than merging with the icon.
-                  border: Border.all(color: c.surface, width: 1.5),
-                ),
-                child: Center(
-                  child: Text(
-                    // Past nine the exact number stops being information and
-                    // starts being a layout problem.
-                    count > 9
-                        ? '${toArabicIndic('9')}+'
-                        : toArabicIndic(count.toString()),
-                    textDirection: TextDirection.ltr,
-                    style: TextStyle(
-                      color: c.surface,
-                      fontSize: 10,
-                      height: 1.2,
-                      fontWeight: FontWeight.w600,
+              // Further off the glyph than a Material badge sits by default:
+              // the bell is 24 dp and the badge is most of a third of it, so
+              // a corner overlap leaves the icon readable while an inset one
+              // turns it into a blob. The `Stack` does not clip, and the
+              // 48 dp touch target absorbs the offset.
+              top: -6,
+              end: -9,
+              // The badge is the one piece of text in the app drawn *on top
+              // of* something rather than beside it. At 1.6× on a 320 dp
+              // phone the unclamped badge grew to the width of the 24 dp
+              // bell and covered it, so the control lost the glyph that says
+              // what it is (found in the Phase 3C render review). Clamping
+              // this subtree alone keeps the count legible — 10 sp still
+              // scales, to 13 — without letting it swallow the icon; every
+              // other string on the screen still scales in full.
+              child: MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.3,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  constraints:
+                      const BoxConstraints(minWidth: 16, minHeight: 16),
+                  decoration: BoxDecoration(
+                    color: c.crit,
+                    borderRadius: BorderRadius.circular(AppRadii.pill),
+                    // Ringed in the bar's own ground so the badge reads as
+                    // sitting on the bell rather than merging with the icon.
+                    border: Border.all(color: c.surface, width: 1.5),
+                  ),
+                  child: Center(
+                    child: Text(
+                      // Past nine the exact number stops being information
+                      // and starts being a layout problem.
+                      count > 9
+                          ? '${toArabicIndic('9')}+'
+                          : toArabicIndic(count.toString()),
+                      textDirection: TextDirection.ltr,
+                      style: TextStyle(
+                        color: c.surface,
+                        fontSize: 10,
+                        height: 1.2,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),

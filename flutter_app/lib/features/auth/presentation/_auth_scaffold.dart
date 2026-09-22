@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../l10n/strings.dart';
 
 /// Shared scaffold for auth screens: keeps them visually distinct from the
 /// signed-in shell (no bottom nav, wider top spacing, single-column form).
@@ -28,6 +29,7 @@ class AuthScaffold extends StatelessWidget {
       appBar: showBack
           ? AppBar(
               leading: IconButton(
+                tooltip: S.back,
                 icon: const Icon(Icons.arrow_back_rounded),
                 onPressed: () => Navigator.of(context).maybePop(),
               ),
@@ -35,8 +37,13 @@ class AuthScaffold extends StatelessWidget {
           : null,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(
-              AppSpacing.xl, AppSpacing.xxl, AppSpacing.xl, AppSpacing.xl),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: EdgeInsetsDirectional.fromSTEB(
+            AppSpacing.xl,
+            AppSpacing.xxl,
+            AppSpacing.xl,
+            AppSpacing.xl + MediaQuery.viewInsetsOf(context).bottom,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

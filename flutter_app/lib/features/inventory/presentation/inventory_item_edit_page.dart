@@ -3,14 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/access/capability.dart';
-import '../../../core/access/capability_guard.dart';
 import '../../../core/format/app_date.dart';
 import '../../../core/motion/animated_counter.dart';
 import '../../../core/result/result.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/async_result.dart';
+import '../../../core/widgets/confirmation_dialog.dart';
 import '../../../l10n/strings.dart';
+import '../../detachment/data/detachment_providers.dart';
 import '../data/inventory_providers.dart';
 import '../domain/inventory_models.dart';
 
@@ -96,18 +97,13 @@ class _S extends ConsumerState<InventoryItemEditPage> {
 
   Widget _form() {
     final c = context.c;
-    final onSave = ref.whenCan(
-      Cap.inventoryItemManage,
-      _save,
-      detachmentId: widget.detachmentId,
-    );
-    final onDelete = _isNew
-        ? null
-        : ref.whenCan(
-            Cap.inventoryItemManage,
-            _confirmDelete,
-            detachmentId: widget.detachmentId,
-          );
+    // Through `DetachmentAccess`, so the store of a detachment that has ended
+    // keeps its history and gains nothing: the form opens read-only and
+    // neither button has a handler behind it.
+    final access = ref.accessIn(widget.detachmentId);
+    final onSave = access.when(Cap.inventoryItemManage, _save);
+    final onDelete =
+        _isNew ? null : access.when(Cap.inventoryItemManage, _confirmDelete);
 
     return Form(
       key: _formKey,
@@ -283,26 +279,16 @@ class _S extends ConsumerState<InventoryItemEditPage> {
   Future<void> _confirmDelete() async {
     final item = _existing;
     if (item == null) return;
-    final c = context.c;
-    final ok = await showDialog<bool>(
+    final ok = await showAppConfirmation(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text(S.deleteItem),
-        content: Text('${item.name}\n\n${S.deleteItemBody}'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text(S.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(foregroundColor: c.crit),
-            child: const Text(S.delete),
-          ),
-        ],
-      ),
+      title: S.deleteItem,
+      identity: item.name,
+      change: S.deleteItemBody,
+      unchanged: S.deleteItemUnchanged,
+      confirmLabel: S.delete,
+      severity: ConfirmationSeverity.destructive,
     );
-    if (ok != true || !mounted) return;
+    if (!ok || !mounted) return;
 
     setState(() => _busy = true);
     final result = await ref.read(inventoryRepositoryProvider).delete(item.id);
@@ -448,7 +434,9 @@ class _ExpiryField extends StatelessWidget {
               ),
               if (value != null)
                 IconButton(
-                  visualDensity: VisualDensity.compact,
+                  tooltip: S.clearItemExpiry,
+                  constraints:
+                      const BoxConstraints(minWidth: 48, minHeight: 48),
                   icon: Icon(Icons.close_rounded, size: 18, color: c.ink3),
                   onPressed: onClear,
                 ),

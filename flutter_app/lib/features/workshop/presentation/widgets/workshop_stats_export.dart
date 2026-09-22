@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
 
@@ -8,6 +9,7 @@ import '../../../../core/motion/motion_tokens.dart';
 import '../../../../core/motion/press_scale.dart';
 import '../../../../core/theme/app_palette.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/time/clock.dart';
 import '../../../../core/widgets/sheet_scaffold.dart';
 import '../../../../l10n/strings.dart';
 import '../../../detachment/domain/report_models.dart';
@@ -32,6 +34,7 @@ enum WorkshopExportOutcome { delivered, empty }
 Future<WorkshopExportOutcome> exportWorkshopReport(
   WorkshopStats stats, {
   required ReportFormat format,
+  required DateTime generatedAt,
   Set<WorkshopReportSection> sections = const {
     WorkshopReportSection.summary,
     WorkshopReportSection.participants,
@@ -45,7 +48,11 @@ Future<WorkshopExportOutcome> exportWorkshopReport(
     return WorkshopExportOutcome.empty;
   }
 
-  final document = buildWorkshopStatsReport(stats, sections: sections);
+  final document = buildWorkshopStatsReport(
+    stats,
+    sections: sections,
+    generatedAt: generatedAt,
+  );
   if (document.isEmpty) return WorkshopExportOutcome.empty;
 
   if (format == ReportFormat.pdf) {
@@ -63,17 +70,18 @@ Future<WorkshopExportOutcome> exportWorkshopReport(
 /// One-tap full-report export: attendance and payment summary with the
 /// financial total, the named participants list, and the named team list.
 /// The third button opens the section picker for anything narrower.
-class WorkshopStatsExportCard extends StatefulWidget {
+class WorkshopStatsExportCard extends ConsumerStatefulWidget {
   const WorkshopStatsExportCard({super.key, required this.stats});
 
   final WorkshopStats stats;
 
   @override
-  State<WorkshopStatsExportCard> createState() =>
+  ConsumerState<WorkshopStatsExportCard> createState() =>
       _WorkshopStatsExportCardState();
 }
 
-class _WorkshopStatsExportCardState extends State<WorkshopStatsExportCard> {
+class _WorkshopStatsExportCardState
+    extends ConsumerState<WorkshopStatsExportCard> {
   ReportFormat? _busyWith;
 
   @override
@@ -124,7 +132,12 @@ class _WorkshopStatsExportCardState extends State<WorkshopStatsExportCard> {
 
   Future<void> _export(ReportFormat format) async {
     setState(() => _busyWith = format);
-    await runWorkshopExport(context, stats: widget.stats, format: format);
+    await runWorkshopExport(
+      context,
+      stats: widget.stats,
+      format: format,
+      generatedAt: ref.read(clockProvider)(),
+    );
     if (mounted) setState(() => _busyWith = null);
   }
 }
@@ -135,6 +148,7 @@ Future<WorkshopExportOutcome?> runWorkshopExport(
   BuildContext context, {
   required WorkshopStats stats,
   required ReportFormat format,
+  required DateTime generatedAt,
   Set<WorkshopReportSection> sections = const {
     WorkshopReportSection.summary,
     WorkshopReportSection.participants,
@@ -147,6 +161,7 @@ Future<WorkshopExportOutcome?> runWorkshopExport(
       stats,
       format: format,
       sections: sections,
+      generatedAt: generatedAt,
     );
     messenger.showSnackBar(SnackBar(
       content: Text(switch (outcome) {
@@ -174,16 +189,16 @@ Future<void> showWorkshopExportSheet(
   );
 }
 
-class _ExportSheetBody extends StatefulWidget {
+class _ExportSheetBody extends ConsumerStatefulWidget {
   const _ExportSheetBody({required this.stats});
 
   final WorkshopStats stats;
 
   @override
-  State<_ExportSheetBody> createState() => _ExportSheetBodyState();
+  ConsumerState<_ExportSheetBody> createState() => _ExportSheetBodyState();
 }
 
-class _ExportSheetBodyState extends State<_ExportSheetBody> {
+class _ExportSheetBodyState extends ConsumerState<_ExportSheetBody> {
   final Set<WorkshopReportSection> _sections =
       WorkshopReportSection.values.toSet();
   bool _busy = false;
@@ -253,6 +268,7 @@ class _ExportSheetBodyState extends State<_ExportSheetBody> {
       stats: widget.stats,
       format: format,
       sections: _sections,
+      generatedAt: ref.read(clockProvider)(),
     );
     if (!mounted) return;
     setState(() => _busy = false);

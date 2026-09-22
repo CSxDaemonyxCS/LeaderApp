@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/access/capability.dart';
 import '../../../core/access/capability_guard.dart';
-import '../../../core/format/app_date.dart';
+import '../../../core/format/app_number.dart';
+import '../../../core/format/app_time.dart';
 import '../../../core/motion/press_scale.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_theme.dart';
@@ -34,7 +35,7 @@ Future<void> showAssignSheet({
 }) async {
   await showAppSheet<void>(
     context: context,
-    title: '${S.assignSheetTitle} · ${AppDate.minuteRange(
+    title: '${S.assignSheetTitle}، ${AppTime.minuteRange(
       shift.startMinutes,
       shift.endMinutes,
     )}',
@@ -197,7 +198,8 @@ class _AssignBodyState extends ConsumerState<_AssignBody> {
                       Icon(Icons.group_rounded, size: 17, color: c.primary),
                       const SizedBox(width: 6),
                       Text(
-                        '${S.selectedMembers} · ${_ar(_selectedIds.length)}',
+                        '${S.selectedMembers} '
+                        '${AppNumber.count(_selectedIds.length)}',
                         style: TextStyle(
                           color: c.ink2,
                           fontSize: 12,
@@ -238,7 +240,7 @@ class _AssignBodyState extends ConsumerState<_AssignBody> {
                 Text(S.unselectedMembers,
                     style: TextStyle(color: c.ink2, fontSize: 12)),
                 const Spacer(),
-                Text('${S.availableNow} · ${_ar(free)}',
+                Text('${S.availableNow} ${AppNumber.count(free)}',
                     style: TextStyle(color: c.ink3, fontSize: 12)),
               ]),
             ),
@@ -286,9 +288,6 @@ class _AssignBodyState extends ConsumerState<_AssignBody> {
       },
     );
   }
-
-  static String _ar(int n) =>
-      n.toString().split('').map((d) => '٠١٢٣٤٥٦٧٨٩'[int.parse(d)]).join();
 
   Future<void> _assign(
       BuildContext context, WidgetRef ref, ShiftCandidate candidate) async {
@@ -457,7 +456,8 @@ class _CandidateRow extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     candidate.busy
-                        ? '${S.busyNow} · ${candidate.busyWith == null ? '' : AppDate.minuteRange(candidate.busyWith!.startMinutes, candidate.busyWith!.endMinutes)}'
+                        ? '${S.busyNow} '
+                            '${candidate.busyWith == null ? '' : AppTime.minuteRange(candidate.busyWith!.startMinutes, candidate.busyWith!.endMinutes)}'
                         : _roleLabel(m.role),
                     style: TextStyle(
                       color: candidate.busy ? c.warn : c.ink3,
@@ -641,7 +641,7 @@ class _AttendanceBodyState extends ConsumerState<_AttendanceBody> {
         if (mode == AttendanceEditMode.ordinary) ...[
           _DateTimeAction(
             label: member.checkInAt == null ? S.checkInDateTime : S.editCheckIn,
-            value: AppDate.dayMonthTime(_checkInAt),
+            value: AppTime.dayTime(_checkInAt),
             icon: Icons.login_rounded,
             onTap: _busy ? null : () => _pickDateTime(isCheckIn: true),
           ),
@@ -649,7 +649,7 @@ class _AttendanceBodyState extends ConsumerState<_AttendanceBody> {
           _DateTimeAction(
             label:
                 member.checkOutAt == null ? S.checkOutDateTime : S.editCheckOut,
-            value: AppDate.dayMonthTime(_checkOutAt),
+            value: AppTime.dayTime(_checkOutAt),
             icon: Icons.logout_rounded,
             onTap: _busy ? null : () => _pickDateTime(isCheckIn: false),
           ),
@@ -769,8 +769,10 @@ class _AttendanceBodyState extends ConsumerState<_AttendanceBody> {
     final date = await showDatePicker(
       context: context,
       initialDate: current,
-      firstDate: shift.date.subtract(const Duration(days: 1)),
-      lastDate: shift.end.add(const Duration(days: 1)),
+      // Calendar days: a picker's bounds are dates, and a 24-hour Duration
+      // lands an hour off across a daylight-saving change.
+      firstDate: addDays(shift.date, -1),
+      lastDate: addDays(shift.end, 1),
     );
     if (date == null || !mounted) return;
     final time = await showTimePicker(
@@ -871,8 +873,10 @@ class _AttendanceBodyState extends ConsumerState<_AttendanceBody> {
     final date = await showDatePicker(
       context: context,
       initialDate: current,
-      firstDate: shift.date.subtract(const Duration(days: 1)),
-      lastDate: shift.end.add(const Duration(days: 1)),
+      // Calendar days: a picker's bounds are dates, and a 24-hour Duration
+      // lands an hour off across a daylight-saving change.
+      firstDate: addDays(shift.date, -1),
+      lastDate: addDays(shift.end, 1),
     );
     if (date == null || !mounted) return;
     final time = await showTimePicker(
@@ -1111,14 +1115,14 @@ class _CorrectionForm extends StatelessWidget {
         ],
         _DateTimeAction(
           label: S.checkInDateTime,
-          value: AppDate.dayMonthTime(checkInAt),
+          value: AppTime.dayTime(checkInAt),
           icon: Icons.login_rounded,
           onTap: busy ? null : onPickCheckIn,
         ),
         const SizedBox(height: AppSpacing.sm),
         _DateTimeAction(
           label: S.checkOutDateTime,
-          value: AppDate.dayMonthTime(checkOutAt),
+          value: AppTime.dayTime(checkOutAt),
           icon: Icons.logout_rounded,
           onTap: busy ? null : onPickCheckOut,
         ),
@@ -1165,9 +1169,8 @@ class _CorrectionForm extends StatelessWidget {
 }
 
 /// A label with a time, forced left-to-right the same way
-/// `DetachmentMemberStatusPage`'s equivalent pill is — `AppDate.time` leaves
-/// direction to the caller, and a digit run flips its halves inside RTL text
-/// otherwise.
+/// `DetachmentMemberStatusPage`'s equivalent pill is. [AppTime] owns the
+/// bidirectional isolation, so the clock cannot flip inside Arabic text.
 class _TimeLabel extends StatelessWidget {
   const _TimeLabel(
       {required this.label, required this.at, required this.color});
@@ -1182,7 +1185,7 @@ class _TimeLabel extends StatelessWidget {
     return Row(mainAxisSize: MainAxisSize.min, children: [
       Text('$label ', style: TextStyle(color: c.ink3, fontSize: 12)),
       Text(
-        at == null ? '—' : AppDate.time(at!),
+        at == null ? '—' : AppTime.time(at!),
         textDirection: TextDirection.ltr,
         style: TextStyle(color: color, fontSize: 13),
       ),
@@ -1221,12 +1224,9 @@ class _CorrectionEntry extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          Directionality(
-            textDirection: TextDirection.ltr,
-            child: Text(
-              AppDate.dayMonthTime(correction.correctedAt),
-              style: TextStyle(color: c.ink3, fontSize: 11),
-            ),
+          Text(
+            AppTime.dayTime(correction.correctedAt),
+            style: TextStyle(color: c.ink3, fontSize: 11),
           ),
         ]),
         const SizedBox(height: 6),
@@ -1271,17 +1271,14 @@ class _SnapshotChip extends StatelessWidget {
                 color: c.ink, fontSize: 12, fontWeight: FontWeight.w600)),
         if (snapshot.checkInAt != null || snapshot.checkOutAt != null) ...[
           const SizedBox(height: 2),
-          Directionality(
-            textDirection: TextDirection.ltr,
-            child: Text(
-              [
-                if (snapshot.checkInAt != null)
-                  AppDate.time(snapshot.checkInAt!),
-                if (snapshot.checkOutAt != null)
-                  AppDate.time(snapshot.checkOutAt!),
-              ].join(' – '),
-              style: TextStyle(color: c.ink3, fontSize: 11),
-            ),
+          Text(
+            snapshot.checkInAt != null
+                ? AppTime.clockRange(
+                    snapshot.checkInAt!,
+                    snapshot.checkOutAt,
+                  )
+                : AppTime.time(snapshot.checkOutAt!),
+            style: TextStyle(color: c.ink3, fontSize: 11),
           ),
         ],
       ]),

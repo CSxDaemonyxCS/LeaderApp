@@ -4,15 +4,17 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/access/capability.dart';
 import '../../../core/access/capability_guard.dart';
-import '../../../core/format/app_date.dart';
+import '../../../core/format/app_time.dart';
 import '../../../core/motion/press_scale.dart';
 import '../../../core/result/result.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/time/clock.dart';
 import '../../../core/widgets/async_result.dart';
 import '../../../l10n/strings.dart';
 import '../data/workshop_providers.dart';
 import '../domain/workshop_models.dart';
+import 'workshop_list_page.dart';
 
 /// Create (`id == null`) or edit a workshop. Both acts are organisation-level.
 class WorkshopEditPage extends ConsumerStatefulWidget {
@@ -29,8 +31,10 @@ class _WorkshopEditPageState extends ConsumerState<WorkshopEditPage> {
   final _name = TextEditingController();
   final _location = TextEditingController();
   final _capacity = TextEditingController();
+  final _fee = TextEditingController();
 
   DateTime? _at;
+  WorkshopStatus _status = WorkshopStatus.scheduled;
   bool _seeded = false;
   bool _saving = false;
 
@@ -41,6 +45,7 @@ class _WorkshopEditPageState extends ConsumerState<WorkshopEditPage> {
     _name.dispose();
     _location.dispose();
     _capacity.dispose();
+    _fee.dispose();
     super.dispose();
   }
 
@@ -50,7 +55,10 @@ class _WorkshopEditPageState extends ConsumerState<WorkshopEditPage> {
     _name.text = w.name;
     _location.text = w.location;
     _capacity.text = w.capacity.toString();
+    _fee.text =
+        w.registrationFee == 0 ? '' : w.registrationFee.toStringAsFixed(0);
     _at = w.at;
+    _status = w.status;
   }
 
   @override
@@ -111,7 +119,7 @@ class _WorkshopEditPageState extends ConsumerState<WorkshopEditPage> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      _at == null ? S.pickDate : AppDate.dayMonthTime(_at!),
+                      _at == null ? S.pickDate : AppTime.dayTime(_at!),
                       style: TextStyle(
                         color: _at == null ? c.ink3 : c.ink,
                         fontSize: 14,
@@ -147,6 +155,41 @@ class _WorkshopEditPageState extends ConsumerState<WorkshopEditPage> {
               },
             ),
           ),
+          const SizedBox(height: AppSpacing.md),
+          _Labelled(
+            label: S.workshopFee,
+            child: TextFormField(
+              controller: _fee,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(hintText: S.workshopFeeHint),
+              validator: (v) {
+                final raw = (v ?? '').trim();
+                if (raw.isEmpty) return null;
+                final n = num.tryParse(raw);
+                return (n == null || n < 0) ? S.workshopInvalidFee : null;
+              },
+            ),
+          ),
+          // A workshop's status is set by hand: the record carries a start
+          // time but no end, so nothing here can derive that it is over.
+          if (!_isNew) ...[
+            const SizedBox(height: AppSpacing.md),
+            _Labelled(
+              label: S.workshopStatusLabel,
+              child: Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
+                children: [
+                  for (final status in WorkshopStatus.values)
+                    _StatusPill(
+                      label: workshopStatusLabel(status),
+                      selected: _status == status,
+                      onTap: () => setState(() => _status = status),
+                    ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: AppSpacing.xxl),
           FilledButton(
             onPressed: _saving ? null : onSave,
@@ -163,7 +206,7 @@ class _WorkshopEditPageState extends ConsumerState<WorkshopEditPage> {
   }
 
   Future<void> _pickDateTime() async {
-    final now = DateTime.now();
+    final now = ref.read(clockProvider)();
     final date = await showDatePicker(
       context: context,
       initialDate: _at ?? now,
@@ -198,6 +241,8 @@ class _WorkshopEditPageState extends ConsumerState<WorkshopEditPage> {
 
     final repo = ref.read(workshopRepositoryProvider);
     final capacity = int.parse(_capacity.text.trim());
+    final fee =
+        _fee.text.trim().isEmpty ? 0.0 : num.parse(_fee.text.trim()).toDouble();
 
     final Result<Workshop> result;
     if (_isNew) {
@@ -206,6 +251,7 @@ class _WorkshopEditPageState extends ConsumerState<WorkshopEditPage> {
         at: _at!,
         location: _location.text.trim(),
         capacity: capacity,
+        registrationFee: fee,
       );
     } else {
       final current = await repo.byId(widget.id!);
@@ -222,6 +268,8 @@ class _WorkshopEditPageState extends ConsumerState<WorkshopEditPage> {
           at: _at,
           location: _location.text.trim(),
           capacity: capacity,
+          status: _status,
+          registrationFee: fee,
         ));
       }
     }
@@ -230,9 +278,8 @@ class _WorkshopEditPageState extends ConsumerState<WorkshopEditPage> {
     setState(() => _saving = false);
 
     result.when(
-      success: (_, {stale = false}) {
-        ref.invalidate(workshopListProvider);
-        ref.invalidate(workshopByIdProvider);
+      success: (Workshop saved, {stale = false}) {
+        refreshWorkshop(ref, saved.id);
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text(S.savedOk)));
         context.pop();
@@ -241,6 +288,51 @@ class _WorkshopEditPageState extends ConsumerState<WorkshopEditPage> {
           .showSnackBar(SnackBar(content: Text(message))),
       offline: (_) => ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text(S.offlineTitle))),
+    );
+  }
+}
+
+/// The status choices, in the same pill shape the list filters use.
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.c;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: PressScale(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadii.pill),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 40),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+          decoration: BoxDecoration(
+            color: selected ? c.primary : c.surface,
+            border: Border.all(color: selected ? c.primary : c.line2),
+            borderRadius: BorderRadius.circular(AppRadii.pill),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? c.primaryInk : c.ink2,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -1,14 +1,20 @@
 import 'dart:math';
+import 'dart:convert';
 
 import '../../../core/display/frame_rate.dart';
 import '../../../core/motion/motion_level.dart';
 import '../../../core/result/result.dart';
+import '../../../core/storage/local_store.dart';
 import '../../../core/theme/theme_state.dart';
 import '../domain/settings_models.dart';
 import '../domain/settings_repository.dart';
 
 class MockSettingsRepository implements SettingsRepository {
-  MockSettingsRepository();
+  MockSettingsRepository({LocalStore? localStore}) : _localStore = localStore;
+
+  static const themePrefsKey = 'mtm.settings.theme';
+
+  final LocalStore? _localStore;
   final _rand = Random(71);
 
   NotificationPrefs _prefs = const NotificationPrefs(
@@ -78,12 +84,28 @@ class MockSettingsRepository implements SettingsRepository {
   /// preference is a local read in any real implementation, and pretending
   /// otherwise only manufactures a flash that the shipped app will not have.
   @override
-  Future<Result<ThemeState?>> themePrefs() async => Success(_themePrefs);
+  Future<Result<ThemeState?>> themePrefs() async {
+    if (_themePrefs case final cached?) return Success(cached);
+    final raw = await _localStore?.readString(themePrefsKey);
+    if (raw == null) return const Success(null);
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return const Success(null);
+      final restored = ThemeState.fromJson(Map<String, dynamic>.from(decoded));
+      _themePrefs = restored;
+      return Success(restored);
+    } catch (_) {
+      // A corrupt or legacy value is only a lost preference. It must never
+      // prevent startup or cause unrelated settings to be wiped.
+      return const Success(null);
+    }
+  }
 
   @override
   Future<Result<ThemeState>> updateThemePrefs(ThemeState prefs) async {
     await _latency();
     _themePrefs = prefs;
+    await _localStore?.writeString(themePrefsKey, jsonEncode(prefs.toJson()));
     return Success(prefs);
   }
 

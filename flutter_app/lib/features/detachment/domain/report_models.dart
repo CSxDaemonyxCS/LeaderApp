@@ -1,3 +1,4 @@
+import '../../../core/format/app_number.dart';
 import '../../../l10n/strings.dart';
 
 /// What can go into an exported report, one switch per section.
@@ -178,10 +179,14 @@ class ReportSeries extends ReportBlock {
       ? 0
       : (values.reduce((a, b) => a + b) / values.length).round();
 
+  String formatValue(int value) => suffix == S.percentSign
+      ? AppNumber.percent(value)
+      : '${AppNumber.count(value)}$suffix';
+
   @override
   List<List<String>> get rows => [
         for (int i = 0; i < values.length; i++)
-          [labels[i], '${values[i]}$suffix'],
+          [labels[i], formatValue(values[i])],
       ];
 }
 
@@ -189,7 +194,7 @@ class ReportSeries extends ReportBlock {
 class ReportDocument {
   const ReportDocument({
     required this.detachmentName,
-    required this.tenantName,
+    required this.detachmentGroupName,
     required this.generatedAt,
     required this.range,
     required this.blocks,
@@ -197,7 +202,7 @@ class ReportDocument {
   });
 
   final String detachmentName;
-  final String tenantName;
+  final String detachmentGroupName;
   final DateTime generatedAt;
   final ReportRange range;
   final List<ReportBlock> blocks;
@@ -222,7 +227,7 @@ class ReportDocument {
   /// forcing an export per section.
   String toCsv() {
     final buffer = StringBuffer()
-      ..writeln(_csvRow([detachmentName, tenantName]))
+      ..writeln(_csvRow([detachmentName, detachmentGroupName]))
       ..writeln(_csvRow([S.reportGeneratedAt, generatedAt.toString()]))
       ..writeln();
     for (final block in blocks) {
@@ -240,7 +245,7 @@ class ReportDocument {
   /// table's shape when pasted somewhere fixed-width.
   String toPlainText() {
     final buffer = StringBuffer()
-      ..writeln('$detachmentName — $tenantName')
+      ..writeln('$detachmentName — $detachmentGroupName')
       ..writeln('${S.reportGeneratedAt} $generatedAt')
       ..writeln();
     for (final block in blocks) {

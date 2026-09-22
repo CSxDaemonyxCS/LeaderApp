@@ -22,6 +22,7 @@ const _locations = <String>[
   '/needs-review',
   // The Notifications Center, a root route for the same reason.
   '/notifications',
+  '/feature-disabled',
   '/login',
   '/mfa-setup',
   '/mfa-challenge',
@@ -31,13 +32,13 @@ const _locations = <String>[
   '/session-expired',
   '/new-device',
   '/home',
-  // Tenants are the container above detachments, so creating a detachment
-  // happens inside one and there is no unparented `/detachment/new`.
-  '/tenant',
-  '/tenant/new',
-  '/tenant/t1/edit',
-  '/tenant/t1',
-  '/tenant/t1/detachment/new',
+  // Detachment groups are the container above detachments, so creating a
+  // detachment happens inside one and there is no unparented `/detachment/new`.
+  '/detachment-groups',
+  '/detachment-groups/new',
+  '/detachment-groups/t1/edit',
+  '/detachment-groups/t1',
+  '/detachment-groups/t1/detachment/new',
   '/detachment',
   '/detachment/d1/edit',
   '/detachment/d1/member/new',
@@ -65,6 +66,20 @@ const _locations = <String>[
   '/more/security',
   '/more/notifications',
   '/more/org',
+  '/more/organization',
+  '/more/plan',
+];
+
+/// The pre-rename `/tenant` locations, kept as redirect-only routes so a link
+/// handed out before Point 1 still resolves. They must *match* a route here —
+/// where they land is `admin_experience_routes_test.dart`, which runs the
+/// redirects with a real session behind them.
+const _legacyLocations = <String>[
+  '/tenant',
+  '/tenant/new',
+  '/tenant/t1',
+  '/tenant/t1/edit',
+  '/tenant/t1/detachment/new',
 ];
 
 GoRouter _buildRouter() {
@@ -84,6 +99,14 @@ void main() {
       final match = router.configuration.findMatch(Uri.parse(location));
       expect(match.isError, isFalse, reason: '$location did not match');
       expect(match.uri.toString(), location);
+    }
+  });
+
+  test('every legacy tenant location still resolves to a route', () {
+    final router = _buildRouter();
+    for (final location in _legacyLocations) {
+      final match = router.configuration.findMatch(Uri.parse(location));
+      expect(match.isError, isFalse, reason: '$location did not match');
     }
   });
 

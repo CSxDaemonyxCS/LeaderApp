@@ -5,14 +5,15 @@ import 'package:go_router/go_router.dart';
 import 'package:mtm/core/router/app_router.dart';
 import 'package:mtm/core/theme/app_palette.dart';
 import 'package:mtm/core/theme/app_theme.dart';
+import 'package:mtm/core/widgets/forward_chevron.dart';
 import 'package:mtm/features/settings/presentation/notifications_page.dart';
-import 'package:mtm/features/settings/presentation/org_info_page.dart';
-import 'package:mtm/features/settings/presentation/performance_page.dart';
+import 'package:mtm/features/organization/presentation/organization_page.dart';
+import 'package:mtm/features/organization/presentation/plan_page.dart';
 import 'package:mtm/features/settings/presentation/profile_page.dart';
 import 'package:mtm/features/settings/presentation/security_page.dart';
 import 'package:mtm/features/settings/presentation/settings_page.dart';
 import 'package:mtm/features/settings/presentation/sync_page.dart';
-import 'package:mtm/features/settings/presentation/themes_page.dart';
+import 'package:mtm/features/settings/presentation/themes_and_performance_page.dart';
 import 'package:mtm/features/settings/presentation/widgets/settings_widgets.dart';
 import 'package:mtm/l10n/strings.dart';
 import 'package:mtm/main.dart';
@@ -52,8 +53,12 @@ void main() {
     // floating bottom nav overlaps the last hub rows (intercepting their
     // taps) and the Organization section falls outside the viewport
     // entirely (a plain `ListView(children:)` only lays out what's within
-    // the viewport + cache extent, same as any other sliver list).
-    tester.view.physicalSize = const Size(1080, 3600);
+    // the viewport + cache extent, same as any other sliver list). Point 15
+    // added the Plan row, so the surface grew with it.
+    // Pricing adds one canonical subscription section above Organization.
+    // Keep this inventory-style harness tall enough to build the footer and
+    // sign-out as well; narrow responsive behavior has its own focused tests.
+    tester.view.physicalSize = const Size(1080, 5400);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
 
@@ -98,20 +103,28 @@ void main() {
 
     // Every category and account destination is reachable from the hub.
     for (final label in [
-      S.settingsAppearance,
-      S.settingsPerformanceTitle,
+      S.sectionThemesPerformance,
       S.settingsProfile,
       S.settingsSecurity,
       S.settingsNotifications,
+      S.pricingTitle,
       S.signOut,
     ]) {
       expect(find.text(label), findsOneWidget, reason: label);
     }
-    // "المزامنة" labels both the Sync section and its one row, and
-    // "المؤسسة" labels both the Organization section and its one row — the
-    // existing Organization group already used this pattern before Point 1.
-    expect(find.text(S.sectionSync), findsNWidgets(2));
-    expect(find.text(S.settingsOrg), findsNWidgets(2));
+    // A destination is named once: Sync is an app row, Organization is a row
+    // under a broader group, and Pricing is the sole subscription door.
+    expect(find.text(S.sectionSync), findsOneWidget);
+    expect(find.text(S.settingsOrg), findsOneWidget);
+    expect(find.text(S.sectionOrgManagement), findsOneWidget);
+    expect(find.text(S.settingsPlan), findsNothing);
+    expect(find.byKey(const Key('settings-pricing-row')), findsOneWidget);
+    expect(find.text(S.pricingTitle), findsOneWidget);
+    expect(
+      find.widgetWithText(NavigationRow, S.settingsEyeProtect),
+      findsNothing,
+      reason: 'Eye Protection is controlled only inside Themes & Appearance',
+    );
   });
 
   testWidgets(
@@ -122,9 +135,9 @@ void main() {
     expect(find.byType(PickerRow), findsNothing);
     expect(find.byType(ChoicePill), findsNothing);
     expect(find.byKey(const Key('sync-now-button')), findsNothing);
-    expect(find.text(S.settingsPalette), findsNothing);
     expect(find.text(S.settingsQuality), findsNothing);
     expect(find.text(S.settingsFrameRate), findsNothing);
+    expect(find.byType(Switch), findsNothing);
     // No raw backend/sync terminology anywhere on the hub.
     expect(find.textContaining('outbox', findRichText: true), findsNothing);
     expect(
@@ -132,13 +145,13 @@ void main() {
   });
 
   testWidgets(
-      'tapping Themes opens the nested Themes screen and back '
-      'returns to the hub', (tester) async {
+      'tapping Themes & Performance opens the one canonical screen and '
+      'back returns to the hub', (tester) async {
     await boot(tester);
 
-    await tester.tap(find.text(S.settingsAppearance));
-    await tester.pumpAndSettle();
-    expect(find.byType(ThemesPage), findsOneWidget);
+    await tester.tap(find.text(S.sectionThemesPerformance));
+    await settleAroundSpinners(tester);
+    expect(find.byType(ThemesAndPerformancePage), findsOneWidget);
     expect(find.byType(SettingsPage), findsNothing);
 
     await tester.tap(find.byType(BackButton));
@@ -146,17 +159,43 @@ void main() {
     expect(find.byType(SettingsPage), findsOneWidget);
   });
 
-  testWidgets('tapping Performance opens the nested Performance screen',
+  testWidgets('the old Performance route redirects to that same screen',
+      (tester) async {
+    final router = await boot(tester);
+
+    router.go('/more/performance');
+    await settleAroundSpinners(tester);
+
+    // One screen owns these controls; the old path is not a second copy.
+    expect(find.byType(ThemesAndPerformancePage), findsOneWidget);
+  });
+
+  testWidgets('the old Eye Protection route redirects to Themes & Appearance',
+      (tester) async {
+    final router = await boot(tester);
+
+    router.go('/more/eye-protect');
+    await settleAroundSpinners(tester);
+    expect(find.byType(ThemesAndPerformancePage), findsOneWidget);
+    expect(find.byKey(const Key('themes-eye-protection')), findsOneWidget);
+    expect(
+      router.routerDelegate.currentConfiguration.uri.path,
+      '/more/themes',
+    );
+  });
+
+  testWidgets('Settings navigation chevrons point forward in Arabic RTL',
       (tester) async {
     await boot(tester);
-
-    await tester.tap(find.text(S.settingsPerformanceTitle));
-    await settleAroundSpinners(tester);
-    expect(find.byType(PerformancePage), findsOneWidget);
-
-    await tester.tap(find.byType(BackButton));
-    await tester.pumpAndSettle();
-    expect(find.byType(SettingsPage), findsOneWidget);
+    final row = find.widgetWithText(NavigationRow, S.sectionThemesPerformance);
+    final tile = tester.widget<ListTile>(
+      find.descendant(of: row, matching: find.byType(ListTile)),
+    );
+    // The shared primitive, not a hand-picked constant: `ForwardChevron`
+    // owns the mirroring rule and `forward_chevron_test.dart` proves which
+    // way it actually paints in each direction.
+    expect(tile.trailing, isA<ForwardChevron>());
+    expect(ForwardChevron.icon, Icons.chevron_right_rounded);
   });
 
   testWidgets('tapping Sync opens the nested Sync screen', (tester) async {
@@ -175,7 +214,8 @@ void main() {
 
   testWidgets(
       'Profile, Security, Notifications and Organization links still open '
-      'their existing routes', (tester) async {
+      'their existing routes, with Plan available inside Organization',
+      (tester) async {
     await boot(tester);
 
     await tester.tap(find.text(S.settingsProfile));
@@ -198,7 +238,13 @@ void main() {
 
     await tester.tap(find.widgetWithText(NavigationRow, S.settingsOrg));
     await tester.pumpAndSettle();
-    expect(find.byType(OrgInfoPage), findsOneWidget);
+    expect(find.byType(OrganizationPage), findsOneWidget);
+    await tester.tap(find.byKey(const Key('org-open-plan')));
+    await tester.pumpAndSettle();
+    expect(find.byType(PlanPage), findsOneWidget);
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    expect(find.byType(OrganizationPage), findsOneWidget);
     await tester.tap(find.byType(BackButton));
     await tester.pumpAndSettle();
 
@@ -209,7 +255,14 @@ void main() {
       (tester) async {
     await boot(tester);
 
-    await tester.tap(find.widgetWithText(OutlinedButton, S.signOut));
+    // Scrolled to first: the hub is a long list, and in a **development**
+    // build it carries one more section than a shipping one (the Point 3
+    // session-state inspector, behind `demoAccountsAllowed`), so the button
+    // that sits below every destination is off-screen at this test's height.
+    final signOut = find.widgetWithText(OutlinedButton, S.signOut);
+    await tester.ensureVisible(signOut);
+    await tester.pumpAndSettle();
+    await tester.tap(signOut);
     await tester.pumpAndSettle();
 
     expect(find.byType(AlertDialog), findsOneWidget);

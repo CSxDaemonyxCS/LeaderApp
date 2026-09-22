@@ -20,14 +20,14 @@ import '../domain/notification_selectors.dart';
 class MockNotificationRepository implements NotificationRepository {
   MockNotificationRepository({
     required ShiftRepository shifts,
-    required InventoryRepository inventory,
+    InventoryRepository? inventory,
     DateTime Function()? clock,
   })  : _shifts = shifts,
         _inventory = inventory,
         _clock = clock ?? DateTime.now;
 
   final ShiftRepository _shifts;
-  final InventoryRepository _inventory;
+  final InventoryRepository? _inventory;
   final DateTime Function() _clock;
 
   /// Yesterday through tomorrow — the same three-day window the dashboard
@@ -48,7 +48,9 @@ class MockNotificationRepository implements NotificationRepository {
       today.subtract(_lookBehind),
       today.add(_lookAhead),
     );
-    final items = await _inventory.listForDetachment(detachmentId);
+    final items = _inventory == null
+        ? const Success<List<InventoryItem>>([])
+        : await _inventory.listForDetachment(detachmentId);
 
     // Null means the section could not be read at all — a failure, or offline
     // with nothing cached. Either section alone degrades to "nothing known",

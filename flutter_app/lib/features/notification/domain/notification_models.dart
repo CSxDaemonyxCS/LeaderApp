@@ -41,6 +41,15 @@ enum NotificationKind {
 
   /// A stock item is inside `storageExpiringWithinDays` of its expiry date.
   stockExpiring,
+
+  /// An internal announcement was published to this detachment.
+  ///
+  /// The one kind that is a **record in its own right** rather than a
+  /// projection of a condition: an administrator wrote it, so it does not
+  /// resolve and it does not disappear when something is fixed. That is why it
+  /// is also the only kind that is *history* — see [tracksReadState] and
+  /// `announcement_selectors.dart`.
+  announcement,
 }
 
 /// How loudly a kind reads. Colour and icon only — it never reorders the
@@ -58,6 +67,7 @@ extension NotificationKindSeverity on NotificationKind {
         NotificationKind.stockLow => NotificationSeverity.warning,
         NotificationKind.stockExpiring => NotificationSeverity.warning,
         NotificationKind.shiftStartingSoon => NotificationSeverity.info,
+        NotificationKind.announcement => NotificationSeverity.info,
       };
 }
 
@@ -88,6 +98,9 @@ sealed class NotificationTarget {
         return const ReviewTarget();
       case 'sync':
         return const SyncTarget();
+      case 'announcement':
+        return AnnouncementTarget(
+            announcementId: j['announcementId'] as String);
       // An unrecognised target is dropped, not guessed: the row then renders
       // as informational rather than sending the user somewhere arbitrary.
       default:
@@ -146,6 +159,34 @@ class StorageTarget extends NotificationTarget {
 
   @override
   int get hashCode => Object.hash('storage', detachmentId, itemId);
+}
+
+/// One announcement, opened as a read-only context view.
+///
+/// **Deliberately not a detachment id.** An announcement can address several
+/// detachments, and picking one of them to open would send the reader to a
+/// place the notice was not about. What the row opens is the notice itself —
+/// its full text, who it was addressed to, and when it stops — which is a safe
+/// context view rather than navigation into unrelated content.
+@immutable
+class AnnouncementTarget extends NotificationTarget {
+  const AnnouncementTarget({required this.announcementId});
+
+  final String announcementId;
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'announcement',
+        'announcementId': announcementId,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AnnouncementTarget && other.announcementId == announcementId;
+
+  @override
+  int get hashCode => Object.hash('announcement', announcementId);
 }
 
 /// The Needs Review inbox.
@@ -224,6 +265,17 @@ class AppNotification {
   NotificationSeverity get severity => kind.severity;
 
   bool get isActionable => target != null;
+
+  /// Whether this row participates in read/unread at all.
+  ///
+  /// False for [NotificationKind.announcement], and that is a product ruling,
+  /// not an oversight: announcements carry **no read state, no receipts and no
+  /// badge** (Point 14 §15). An announcement row is therefore built already
+  /// read, [applyReadState] leaves it alone, and [unreadCount] does not count
+  /// it — so publishing a notice never lights the bell for a row nobody is
+  /// expected to acknowledge, and the unread behaviour of every other kind is
+  /// untouched.
+  bool get tracksReadState => kind != NotificationKind.announcement;
 
   AppNotification copyWith({bool? isRead}) => AppNotification(
         id: id,

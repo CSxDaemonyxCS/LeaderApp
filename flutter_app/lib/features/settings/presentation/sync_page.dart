@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/reading_column.dart';
 import '../../../l10n/strings.dart';
 import '../../shell/main_shell.dart';
 import 'widgets/sync_settings_section.dart';
@@ -27,11 +28,15 @@ class SyncPage extends StatelessWidget {
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(title: const Text(S.sectionSync)),
+      // One column of label↔value rows: capped at the reading measure so a
+      // tablet gains margins instead of a row whose label and value sit at
+      // opposite ends of the window. Below 520 dp nothing changes.
       body: FloatingNavPadding(
-        child: ListView(
+        child: ReadingColumn(
+            child: ListView(
           padding: const EdgeInsets.all(AppSpacing.lg),
           children: const [SyncSettingsSection()],
-        ),
+        )),
       ),
     );
   }
