@@ -1206,14 +1206,6 @@ abstract final class S {
   // surfaces. Cosmetic and local: it never reaches auth, roles, the tenant
   // or the backend, and it never changes the launcher icon — that one is
   // fixed to Clean Layer for everyone.
-  static const settingsBrandLogoSection = 'شعار $productNameAr';
-  static const settingsBrandLogoSectionSub =
-      'اختر الشعار الذي يظهر داخل التطبيق. أيقونة التطبيق على الشاشة الرئيسية '
-      'لا تتغير.';
-  static const settingsBrandLogoDefault = 'الافتراضي';
-  static const brandLogoCleanLayer = 'الطبقة النظيفة';
-  static const brandLogoElegantCurve = 'المنحنى الأنيق';
-  static const brandLogoDepth = 'العمق';
   static const settingsLightMode = 'المظهر';
   static const settingsLightModeSub =
       'اختر المظهر الفاتح أو الداكن، أو اتبع إعداد الجهاز.';
@@ -2779,6 +2771,8 @@ abstract final class S {
   static const onboardingResendThrottled = 'انتظر قليلاً قبل طلب رمز جديد.';
   static const onboardingGoogleRetry =
       'تعذّرت المتابعة عبر Google. حاول مرة أخرى.';
+  static const onboardingGoogleUnavailable =
+      'المتابعة عبر Google غير متاحة في هذا الإصدار. استخدم البريد وكلمة المرور.';
   static const onboardingMethodLinkRequired =
       'هذا البريد مسجَّل بكلمة مرور. سجّل الدخول بكلمة المرور.';
   static const onboardingUnsupportedMethod =

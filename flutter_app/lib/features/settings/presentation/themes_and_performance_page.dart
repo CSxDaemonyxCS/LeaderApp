@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/brand/brand_logo.dart';
 import '../../../core/display/frame_rate.dart';
 import '../../../core/motion/animated_counter.dart';
 import '../../../core/motion/motion_level.dart';
@@ -14,7 +13,6 @@ import '../../../l10n/strings.dart';
 import '../../shell/main_shell.dart';
 import '../data/frame_rate_provider.dart';
 import '../data/motion_level_provider.dart';
-import 'widgets/brand_logo_card.dart';
 import 'widgets/settings_widgets.dart';
 import 'widgets/theme_choice_card.dart';
 
@@ -31,10 +29,14 @@ import 'widgets/theme_choice_card.dart';
 /// Reading comfort remains independent state, but this is its only
 /// user-facing control. It never changes either palette or appearance.
 ///
-/// The Leader mark is picked here too, for the same reason the palette is:
-/// it is a look, it applies instantly, and it is stored in the same place.
-/// It is the **in-app** mark only — the home-screen icon is fixed for
-/// everyone and this screen says so.
+/// **The Leader mark is not on this screen, and is not a setting.** There was
+/// briefly a «شعار ليدر» section here offering three variants of the lockup.
+/// A product's own mark is the one thing that has to be the same object every
+/// time it appears — home screen, launch, About — and the launcher icon could
+/// never follow the choice anyway (Android only swaps one by toggling
+/// activity-aliases, which drops the user's placed shortcut). The selector,
+/// its persisted value and its two alternate assets are gone; see
+/// `core/brand/brand_mark.dart`.
 class ThemesAndPerformancePage extends ConsumerWidget {
   const ThemesAndPerformancePage({super.key});
 
@@ -142,28 +144,6 @@ class ThemesAndPerformancePage extends ConsumerWidget {
                 ),
               ),
             ]),
-            // ---- The mark, after the colours it has to sit on ----
-            const SectionLabel(S.settingsBrandLogoSection),
-            Padding(
-              padding: const EdgeInsetsDirectional.only(
-                start: AppSpacing.xs,
-                bottom: AppSpacing.md,
-              ),
-              child: Text(
-                S.settingsBrandLogoSectionSub,
-                style: TextStyle(color: c.ink3, fontSize: 12, height: 1.5),
-              ),
-            ),
-            for (final logo in BrandLogo.values) ...[
-              BrandLogoCard(
-                key: Key('brand-logo-${logo.name}'),
-                logo: logo,
-                selected: theme.logo == logo,
-                onTap: () =>
-                    ref.read(themeControllerProvider.notifier).setLogo(logo),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-            ],
             // ---- Then performance ----
             const SectionLabel(S.settingsPerformanceSection),
             SettingsSection(children: [

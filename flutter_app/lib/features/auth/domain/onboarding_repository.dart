@@ -183,6 +183,13 @@ enum OnboardingErrorKind {
   verificationEnded,
   resendThrottled,
   googleRetry,
+
+  /// Google identity cannot be offered by **this build on this device** —
+  /// the provider is not configured, or the platform has no account chooser
+  /// to show. Distinct from [googleRetry], which means the attempt itself
+  /// failed: "try again" is the wrong instruction when trying again cannot
+  /// work, and it is the sentence that sends a person round the same loop.
+  googleUnavailable,
   methodLinkRequired,
   unsupportedMethod,
   teamCodeMalformed,

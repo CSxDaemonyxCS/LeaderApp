@@ -7,7 +7,18 @@ Read in this order to resume:
    COMPLETE: domain model, identifiers, auth/refresh, onboarding, Team Code,
    invitations, Customer Demo, authorization order, state machines, endpoint
    inventory, idempotency, errors, audit, privacy, deployment, final gap
-   classification, build order). Start here for anything backend-facing.
+   classification, build order). Start here for anything backend-facing — and
+   start *there* at **§19 BACKEND IMPLEMENTATION READINESS**, added in the
+   2026-09-23 entry-checkpoint audit: what is implementable now, what waits on
+   external Google/keystore/email configuration, which product and data
+   decisions are still open, and what is frontend-only and must never grow an
+   endpoint (appearance, Eye Protection, motion/frame rate, the intro, the
+   pulse, the fixed mark). That audit also corrected the stale `minSdk` claim
+   in §14, superseded the `settings/motion-level` endpoint pair in
+   `API_CONTRACT.md`, recorded the native Google chooser as wire-neutral,
+   enumerated the seven live data dependencies once in `DATA-NEEDS.md` §16,
+   and added `FRONTEND-BACKEND-INTEGRATION.md` §8. No backend stack was
+   chosen.
 3. **this file** — start with **UI QUALITY PROGRAMME — FINAL STATUS**, then
    **PHASE 3C: CLOSURE VERIFICATION**, then **PHASE 3B: TENANT UI
    CLEANUP**, then **PHASE 3A: THE HIGH-RISK TENANT SCREENS**, then **UI
@@ -181,9 +192,11 @@ below are what the phase actually changed, and every one of them was found by
 
 ### Brand
 
-`S.productNameAr` is «ليدر» and `S.productNameEn` is «Leader»; `BrandLogo`
-holds exactly three marks with `cleanLayer` (06 · Clean Layer) as the default
-and the launcher icon. The only `MTM` left in `lib/` outside comments is the
+`S.productNameAr` is «ليدر» and `S.productNameEn` is «Leader». There is
+**one** mark — `06 · Clean Layer` — drawn by `core/brand/brand_mark.dart` from
+the single path on `AppInfo.logoAsset`, and it is also the launcher icon. (It
+was briefly three, selectable in Settings; see "THE ENTRY EXPERIENCE" below
+for why that is gone.) The only `MTM` left in `lib/` outside comments is the
 Team Code prefix and its hint mask — protocol identifiers `CLAUDE.md` keeps
 deliberately. No visible branding leakage.
 
@@ -1224,7 +1237,15 @@ The primitives the Super Admin redesign can now consume:
 
 ---
 
-## BRAND MARKS & THE GREEN/GLASS LOGIN (IMPLEMENTED, 2026-09-19)
+## BRAND MARKS & THE GREEN/GLASS LOGIN (2026-09-19) — **PARTLY SUPERSEDED**
+
+> Superseded by "THE ENTRY EXPERIENCE (IMPLEMENTED, 2026-09-22)" at the end of
+> this file. Still true: the launcher icon and why it is fixed, the
+> green/glass direction, the blur budget, the Google skin, the `S.loginTitle`
+> / `S.loginSub` / `S.signIn` strings, and the `LoginField.keyFor` gotcha.
+> **No longer true:** the three-mark catalogue, `BrandLogo`, `ThemeState.logo`,
+> the `شعار ليدر` picker and its six strings, `login_glass.dart`/`LoginGlass`,
+> and Login's mark-plus-wordmark header.
 
 ### What shipped
 
@@ -9763,3 +9784,311 @@ Optional, in the order I would take them:
    is deliberately thinner than its source.
 3. If wanted, a widget test that asserts "السمات والأداء" renders above
    "الحساب" on the settings screen.
+
+
+---
+
+## THE ENTRY EXPERIENCE (IMPLEMENTED, 2026-09-22)
+
+The app's front door: one fixed brand mark, a redesigned sign-in screen, a
+cold-launch intro, and Google going through the platform's own account
+chooser. Nothing outside `/startup`, `/login` and the brand plumbing was
+touched.
+
+### A. One mark. The selector is gone.
+
+`BrandLogo` (three marks), `ThemeState.logo`, `ThemeController.setLogo`,
+`BrandLogoCard` and the `شعار ليدر` section of `/more/themes` are **removed**,
+along with `settingsBrandLogoSection`, `settingsBrandLogoSectionSub`,
+`settingsBrandLogoDefault`, `brandLogoCleanLayer`, `brandLogoElegantCurve` and
+`brandLogoDepth`. `assets/brand/leader_logo_elegant_curve.png` and
+`leader_logo_depth.png` are deleted from the bundle.
+
+The reasoning, which is also written into `core/brand/brand_mark.dart`: a
+product's mark is the one thing that has to be the *same object* every time it
+appears — on the home screen, at launch, on the forced-upgrade screen, in
+About — and offering three of them made the product's own identity a setting.
+The launcher icon could never follow the choice anyway (Android only swaps one
+by toggling activity-aliases, which drops the user's placed shortcut), so the
+selector guaranteed a mismatch between the icon someone tapped and the mark
+they then saw.
+
+* `AppInfo.logoAsset` is the **only** place `assets/brand/…` is spelled in
+  `lib/`, and `test/features/settings/brand_mark_test.dart` fails if a second
+  appears.
+* `BrandMark` (`core/brand/brand_mark.dart`) is the widget that draws it, with
+  an optional coloured bloom. Key: `BrandMark.widgetKey`. It carries no
+  semantics — every screen that draws the mark also says the name.
+* `ThemeState.fromJson` **reads and drops** a `logo` key written by the old
+  build: a preference the app no longer offers must not cost the palette and
+  appearance stored beside it. `toJson` no longer writes one.
+* The launcher icon is unchanged and still fixed:
+  `mipmap-anydpi-v26/ic_launcher.xml` over the per-density foregrounds.
+* `assets/brand/mtm_logo_full.png` is still bundled and still drawn nowhere.
+  It predates all of this and was left alone deliberately.
+
+### B. `EntryGlass` — one surface for both entry screens
+
+`login_glass.dart`/`LoginGlass` became
+`features/auth/presentation/entry_glass.dart`/`EntryGlass`, because the launch
+screen and the sign-in screen are now painted on the *same* ground. That is
+what makes a cold launch read as the mark dissolving into a form rather than
+as two screens with a cut between them — the route cross-fade changes the
+content over a background that never moves.
+
+New roles on top of the old set:
+
+| Token | What it is for |
+| --- | --- |
+| `horizon` | The screen's light source: one wide soft glow seated off the top edge. Everything else is lit consistently with it. |
+| `accentInk` | The accent **as text**. A filled button and a focus ring are UI components and clear 3:1 at `accent`; a 13.5 sp link is prose and has to clear 4.5:1 against the *ground*, which on the light surface `accent` does not. |
+| `ctaDisabled` / `onCtaDisabled` | A real pair of colours for the primary action with nothing to submit. See "the disabled CTA" below. |
+| `fieldFocusFill` | The focused well **brightens**; focus is carried by the surface as well as by the ring and the border. |
+| `pulse` / `pulsePeak` | The ambient pulse's colour and its brightest alpha. |
+
+**Two fixes that came out of measuring instead of looking.**
+
+1. `EntryGlass.warmed()` now preserves each token's own alpha
+   (`Color.lerp(...).withValues(alpha: c.a)`). `Color.lerp` interpolates alpha
+   too and the warm target is opaque, so lerping an 8 %-alpha wash 40 % of the
+   way there landed it at ~45 % — which does not warm the ambience, it turns
+   it into a curtain. `AppColors.warmed` does not need this because every
+   palette token is opaque; this surface has translucent ground tokens.
+2. Contrast is now **enforced by test** for this surface as well:
+   `test/features/auth/entry_surface_test.dart` holds every ink to WCAG AA
+   against the surface it is actually drawn on, in light, dark and both
+   eye-protect variants, and bounds what the pulse may do.
+
+### C. Login: what changed and why
+
+**The brand is said once.** The screen opened with the mark, then «ليدر»,
+then «مرحباً بك في ليدر» — three statements of the same fact in the first
+140 dp, before anything the person came to do. The mark block and the
+standalone wordmark are gone; the heading carries the name, and a 44×3 accent
+rule above it keeps the top from floating.
+
+**Two zones, not one.** Who you are and what this is sit on the ground (the
+heading and one supporting line). What you *do* sits on the glass (two fields,
+forgot, the primary action, the rule, Google). The panel used to open with a
+paragraph, which made the reader work out where the form started; now the
+panel *is* the form. A notice carried over from a previous session
+(«انتهت الجلسة» and friends) is a tinted live region at the top of the panel
+rather than loose centred text.
+
+**Colour.** The complaint was "muted, washed out", and it was mostly true of
+the light ground: a near-white mint on which a white glass panel is almost
+invisible. The light ground is deeper and genuinely tinted (`#E3F4F0` →
+`#D1EAE5` → `#BBDADB`), its white light source is weaker (55 % → 35 %, because
+white on a light ground bleaches rather than illuminates), and the light
+accent moved from `#096865` — near-black at small sizes — to `#0B7F75`, which
+is the brightest teal that still clears 4.5:1 with white on it. Dark gained
+chroma in the ground and a brighter mint accent (`#5FDCBB`).
+
+**The CTA is the one lit object.** Solid accent with its own accent-tinted
+shadow under it, dropped while the button is disabled — an inert control that
+still casts light is exactly the mixed signal a disabled state exists to
+avoid.
+
+**The disabled CTA is a real pair of colours.** The empty form is the first
+thing everyone sees, so the disabled CTA is the most-viewed state on the
+most-viewed screen, and diluting the accent with alpha produced precisely the
+muddy slab the redesign was asked to fix. It is now an opaque, quiet chip
+(`#9CC6C1` with `#0F3D39` ink in light; `#26544C` with `#9CC6BB` in dark) —
+unmistakably not the accent, unmistakably still a button, and its label clears
+4.5:1, which is more than the convention asks of a disabled control and the
+right amount for one whose whole job is to say what is still missing.
+
+**Focus moves three things**: the border takes the accent, a 4 dp ring
+appears, and the well itself brightens. On a frosted panel a border change
+alone is close to invisible.
+
+### D. The ambient pulse
+
+`EntryPulse` (in `entry_glass.dart`) is the screen's one piece of ongoing
+motion: a breathing core of light plus two soft rings leaving it half a cycle
+apart and fading as they widen, on a **5.2 s** cycle — slower than a resting
+heart rate, because the screen should read as *awake*, not as *waiting*.
+
+* It is a `CustomPainter` inside a `RepaintBoundary` inside an
+  `IgnorePointer`, behind the form. It participates in no layout, moves no
+  control, and allocates nothing per frame but three radial shaders. No
+  `BackdropFilter`, no video, no package.
+* Each ring is a radial gradient whose stops peak just inside its edge — a
+  soft annulus with no rim anywhere, which a stroked circle cannot give.
+* It answers to `MotionSpec.ambientLoops`, exactly where the skeleton shimmer
+  and the lock-window halo stop, and that folds in
+  `MediaQuery.disableAnimations`. With ambience off there is **no controller
+  at all**: the painter draws one fixed mid-expansion frame, so the screen
+  keeps its composition and loses only its movement.
+* `_EntryPulseState` uses `TickerProviderStateMixin`, not the single-ticker
+  one: the quality level is a live setting, so the widget can genuinely be
+  asked to give its controller up and later create another.
+* Light needs roughly twice dark's alpha for the same perceived lift, so the
+  bound in the test is on the *result* — a wave at its brightest must stay
+  under 2:1 against the ground it crosses, past which it stops reading as
+  light and starts reading as an object with an edge.
+
+### E. The intro, and `IntroGate`
+
+`/startup` now renders `LeaderIntro` (`features/auth/presentation/
+leader_intro.dart`). At full motion: the mark fades up and settles from 0.86
+scale (0–520 ms), the pulse fades in behind it and runs, «ليدر» rises 10 dp
+(560–900 ms), and the whole thing hands over at **1700 ms**.
+
+**The hold lives in the routing decision, not in a widget's timer.** The
+router leaves `/startup` the instant the classifier changes its mind, and on a
+warm device that is frame two — so an intro that merely animated would be cut
+off and the launch would flash. `core/startup/intro_gate.dart` adds
+`IntroPhase` and `introGateProvider`, and `StartupInputs.introHolding` is a
+new **priority 0** input to `resolveStartup`. It is first because it is not an
+answer: it can only ever resolve to `restoring`, the surface a launch already
+sits on, and every real outcome below it is merely *late* by the length of one
+animation.
+
+* **Cold launch only, by construction.** `main()` calls
+  `IntroGate.armColdLaunch()` before `runApp`; `build()` consumes that arming
+  the first time the provider is read and nothing can set it again. Signing
+  out, tab changes, returning from the background and landing back on
+  `/startup` therefore cannot replay it. There is no persisted "seen the
+  intro" flag — process lifetime is exactly the right scope.
+* **It is armed before `runApp`, deliberately.** Arming inside `initState`
+  would write provider state while GoRouter's `refreshListenable` is still
+  mounting — the reentrant rebuild-during-mount `main.dart` already documents
+  avoiding.
+* **It cannot stick.** Arming starts an `IntroGate.ceiling` (2600 ms) timer
+  that finishes the gate whatever the screen does, so a disposed,
+  never-mounted or crashed intro costs at most that long. `finish()` cancels
+  the timer.
+* **Slow boot is designed, not hidden.** If the classifier is still
+  `restoring` when the sequence ends, the screen stays and — 600 ms later —
+  fades in the same live-region «جارٍ فتح التطبيق» the old startup surface
+  used. A quick launch never shows that line. No fake delay is ever
+  introduced.
+* **Reduced motion gets none of it**: `effectiveDuration` collapses the
+  sequence to zero, the gate is released on the first post-frame callback, and
+  the screen draws its finished composition.
+* `LeaderIntro` releases the gate from a post-frame callback (or from the
+  controller's status listener, which is outside the build phase) — writing
+  provider state during a build is refused by Riverpod.
+
+`StartupPage` is now three lines over `LeaderIntro`; the old mark + sentence +
+`LinearProgressIndicator` are gone.
+
+### F. Google: the platform's own account chooser
+
+**What was wrong.** A debug build on a real phone put up
+`_MockGoogleChooserDialog` — an in-app `AlertDialog` asking the user to *type*
+a Google address. That is a development fixture for exercising the
+repository's verified/unverified/method-link paths where no native chooser
+exists, and it was gated only on `demoAccountsAllowed`, which is true in any
+debug build including one installed on a device.
+
+**What it is now.** `googleDevelopmentChooserProvider` (in
+`google_identity_gateway.dart`) gates it on
+`developmentGoogleChooserSupported(isWeb:, platform:)`, which is **false on
+Android and iOS** and on web. On a phone the button always runs the SDK. The
+two suites that drive a mock Google identity now override the provider to
+`true` by name, which is honest about what they are exercising.
+
+**The SDK path was already the native chooser** and is unchanged in shape:
+`GoogleSignIn.instance.authenticate()` on Android issues a
+`GetSignInWithGoogleOption` credential request — the system "Sign in with
+Google" sheet listing the device's accounts, with no authorized-account filter
+and no auto-select. What was added is `signOut()` immediately before it: the
+plugin documents that a client should not call `authenticate` for a new
+account until after a `signOut`, and someone pressing the Google button *on
+purpose* is asking to choose, possibly a different account than last time. It
+clears this app's own session only — not the device's Google accounts, not
+Android's own sign-in, and not any authorization grant (`disconnect()` is
+never called). A failed sign-out is swallowed; it must never be the reason a
+sign-in cannot start.
+
+**Unavailable now says something useful.** `OnboardingErrorKind
+.googleUnavailable` + `S.onboardingGoogleUnavailable`
+(«المتابعة عبر Google غير متاحة في هذا الإصدار…») replaced "try again" for
+the configuration/no-UI case on both Login and Signup. "Try again" is the
+wrong instruction when trying again cannot work.
+
+**Everything after the identity is unchanged**: the same assertion goes to
+`OnboardingController.signInWithGoogle`, invitation still outranks the
+Team/Demo choice, tenant and demo isolation and the role gates are untouched.
+
+**External configuration is still required** — see §H.
+
+### G. Tests
+
+* `test/features/settings/brand_mark_test.dart` — replaces
+  `brand_logo_test.dart`. One mark, the retired assets gone, `assets/brand/`
+  spelled exactly once in `lib/`, the launcher icon fixed and per-density, no
+  picker and no artwork on `/more/themes`, no `logo` key persisted, and an old
+  stored `logo` costing nothing else.
+* `test/features/auth/entry_surface_test.dart` — the contrast floors above,
+  the eye-protect asymmetry, the pulse's bounds, the painter at every phase
+  including degenerate sizes, and that the controller exists only when
+  ambience is allowed.
+* `test/core/startup/intro_test.dart` — the gate's contract, a cold launch
+  holding and then handing over, no other screen before it is over, the slow
+  boot caption, no replay after sign-out, and the reduced-motion path.
+* `test/features/auth/login_screen_test.dart` — rewritten for the new
+  hierarchy: no mark, the product name exactly once, the heading above the
+  panel, the pulse running/stopping by motion level and never taking a hit
+  test, plus the existing fit and appearance matrices.
+* `test/features/auth/google_identity_gateway_test.dart` — sign-out before
+  authenticate and its order, a refused sign-out not blocking sign-in, no
+  `disconnect`, no scope hint, and the development chooser refused on
+  Android/iOS/web.
+
+### H. Gotchas for whoever is next
+
+1. **`pumpAndSettle` does not return on `/startup` or `/login`.** The ambient
+   pulse is a looping controller, by design. `test/entry_settle.dart` holds
+   the shared bounded pump (`settleEntry`) and explains why; six suites use
+   it. Do **not** reach for it on a screen that has no entry surface in it —
+   that would hide a genuine never-settling animation somewhere else.
+2. **A render harness that only sets `MaterialApp.themeMode` renders light.**
+   The entry surface resolves its own brightness and eye-protect from the
+   *stored theme* (`themeStateProvider`). `onboarding_render.dart` had been
+   labelling light shots "dark" for that reason; it now overrides
+   `settingsRepositoryProvider` with a fixed `ThemeState`. This is the second
+   time this exact defect has been found — see FRONTEND-DESIGN-NOTES, "A
+   render harness that cannot render the mode is not covering it".
+3. **The intro carries the Arabic wordmark**, so an assertion taken *during*
+   the route transition off `/startup` sees «ليدر» twice. Pump past the
+   transition (`forced_upgrade_test.dart` does).
+4. Login still labels its fields **above** the input, so use
+   `LoginField.keyFor(S.emailLabel)`, not a label finder.
+
+### I. External configuration still required (nothing in the repo can supply it)
+
+Google Sign-In will report *unavailable* until all of this exists. The code is
+complete; these are console/keystore facts.
+
+1. A Google Cloud project with the **Google Identity / Credential Manager**
+   API available.
+2. An **Android OAuth client** for package `com.leader.teams`, registered with
+   the SHA-1 of every keystore that will sign a build people sign in from —
+   the debug keystore (`~/.android/debug.keystore`, password `android`) for
+   development, and the release/Play App Signing key for shipping. Without the
+   matching SHA-1 the system sheet opens and then fails.
+3. A **Web application OAuth client** in the same project. Its client ID is
+   what the app passes as `serverClientId`; it is the audience of the ID token
+   the backend will verify.
+4. Build with that id:
+   `flutter build apk --dart-define=MTM_GOOGLE_SERVER_CLIENT_ID=<web client id>`
+   (or `--dart-define-from-file`). It is deliberately **not** committed.
+5. The backend's `POST /auth/google` must accept that same web client ID as
+   the token audience. See `BACKEND-HANDOFF.md`.
+6. `minSdk` is 24 (Flutter's default for 3.44), comfortably above the 23 that
+   Credential Manager's Google ID flow needs. Nothing to change.
+
+### J. Not done, deliberately
+
+* **The adaptive performance system** — explicitly out of scope; a later
+  phase.
+* **No physical device verification.** `adb devices -l` listed none while this
+  was built, so the APK was verified by inspection (`com.leader.teams`,
+  label «ليدر», `mipmap-anydpi-v26/ic_launcher.xml`, only the Clean Layer
+  mark bundled) and not installed or launched. The intro, the pulse and the
+  Google system sheet have not been watched on hardware.
+* **`assets/brand/mtm_logo_full.png`** is still bundled and drawn nowhere. It
+  is unrelated to the selector and removing it was not part of this work.

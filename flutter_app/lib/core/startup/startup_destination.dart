@@ -212,11 +212,20 @@ class StartupInputs {
     required this.gate,
     required this.now,
     this.user,
+    this.introHolding = false,
     this.upgradeBlocks = false,
     this.access = SessionAccess.normal,
     this.hasTenantCapability = false,
     this.entry = const EntryNone(),
   });
+
+  /// Whether the cold-launch brand intro is still on screen.
+  ///
+  /// Defaults to `false`, which is what every caller that does not run a real
+  /// process launch gets — the classifier's whole table is unchanged for
+  /// them. See `core/startup/intro_gate.dart` for why the hold is an input
+  /// here rather than a delay inside the launch screen.
+  final bool introHolding;
 
   /// Whether the forced-upgrade gate currently shuts the app.
   /// `AppVersionState.blocksApp` — not recomputed here.
@@ -264,6 +273,14 @@ class StartupInputs {
 ///
 /// ## Priority, and why it is this order
 ///
+///  0. **The cold-launch intro.** It is first because it is not an answer:
+///     it is a hold, it can only ever resolve to [StartupDestination
+///     .restoring] — the surface a launch already sits on — and it releases
+///     itself after at most `IntroGate.ceiling`. Below (1) it would mean the
+///     app could show the forced-upgrade screen, flash, and then show the
+///     brand intro; above it, every real outcome is merely *late* by the
+///     length of one animation, and each still applies in full the instant
+///     the gate opens. Only a real process launch ever sets it.
 ///  1. **Forced upgrade.** It does not depend on a session, it resolves
 ///     synchronously from a verdict already persisted, and a build the backend
 ///     refuses must not spend a restoration on a session it may not use. This
@@ -323,6 +340,7 @@ class StartupInputs {
 /// 17. **The requested route**, which the existing capability guards then
 ///     answer for themselves.
 StartupDestination resolveStartup(StartupInputs input) {
+  if (input.introHolding) return StartupDestination.restoring;
   if (input.upgradeBlocks) return StartupDestination.forcedUpgrade;
 
   switch (input.gate) {

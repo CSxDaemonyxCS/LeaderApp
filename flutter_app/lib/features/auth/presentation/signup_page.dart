@@ -81,8 +81,8 @@ class _SignupPageState extends ConsumerState<SignupPage> {
       case GoogleSignInCancelled():
         return;
       case GoogleSignInUnavailable():
-        setState(() =>
-            _error = onboardingErrorMessage(OnboardingErrorKind.googleRetry));
+        setState(() => _error =
+            onboardingErrorMessage(OnboardingErrorKind.googleUnavailable));
         return;
       case GoogleSignInNetworkFailure():
         setState(() => _offline = true);

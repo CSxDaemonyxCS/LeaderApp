@@ -289,3 +289,69 @@ Light for all six palettes since appearance became its own axis — so the two
 shots named "dark" were light ones, and a dark-mode regression could have sat
 in a passing render set unseen. Appearance is an explicit parameter now. When a
 harness names a condition, check that it actually produces it.
+
+## The entry experience (2026-09-22)
+
+`/startup` and `/login` are one surface with two states, and the rules they
+established are reusable by any other screen the app decides to paint outside
+`AppColors`.
+
+| Concern | Use | Never |
+| --- | --- | --- |
+| The Leader mark, anywhere | `BrandMark` (`core/brand/brand_mark.dart`) | a second `assets/brand/…` path; `brand_mark_test.dart` fails on one |
+| A colour on the entry screens | an `EntryGlass` token | a literal, and never an `AppColors` token — the palette is a *choice*, and this is the screen before there is a chooser |
+| The accent as **text** | `EntryGlass.accentInk` | `accent` — a filled button clears 3:1, a 13.5 sp link has to clear 4.5:1 on the ground |
+| A disabled primary action | a real pair of colours | the accent at an opacity |
+| Holding a launch for an animation | an input to `resolveStartup` | a delay inside the screen |
+| Settling a test tree with an entry screen in it | `settleEntry` (`test/entry_settle.dart`) | `pumpAndSettle` — it never returns |
+
+### The brand is said once per screen
+
+The mark, a wordmark and a welcome heading are three statements of the same
+fact. Login used to carry all three above the fold, before anything the person
+came to do. The launcher icon and the launch intro have already shown the
+mark by the time the form exists, so the form's heading carries the name and
+nothing else does. Where a heading would then float, a short accent rule is
+enough — a mark is not the only way to put brand at the top of a screen.
+
+### Warming a translucent token is not the same as warming an opaque one
+
+`AppColors.warmed()` lerps toward an opaque warm target, which is correct for
+a palette whose every token is opaque. A surface with translucent ground
+tokens — ambient washes, a light source, a status wash — cannot use that
+transform unchanged: `Color.lerp` interpolates alpha too, so an 8 %-alpha wash
+lerped 40 % of the way to an opaque target lands at ~45 % and becomes a
+curtain. Warm the hue, keep the alpha
+(`Color.lerp(c, target, amount).withValues(alpha: c.a)`).
+
+### Ambient motion is bounded by what it does, not by its alpha
+
+The entry pulse needs roughly twice as much alpha on the light ground as on
+the dark one to be equally perceptible, so a single opacity ceiling is the
+wrong rule. The rule that holds in both is about the result: a wave at its
+brightest frame must stay under 2:1 against the ground it crosses. Past that
+it stops reading as light and starts reading as an object with an edge. The
+same reframing applies to any glow, halo or shimmer added later.
+
+Two mechanical requirements go with it. A looping ambience widget must use
+`TickerProviderStateMixin`, not the single-ticker one, because the quality
+level is a live setting and the widget can be asked to give its controller up
+and later create another. And it must draw a **fixed frame** when
+`MotionSpec.ambientLoops` is false rather than drawing nothing — the screen
+should lose its movement, not its composition.
+
+### A hold at launch belongs in the routing decision
+
+The router leaves the launch surface the instant the startup classifier can
+answer, which on a warm device is frame two. An intro that only animated would
+be cut off and the launch would flash. `IntroGate` therefore feeds
+`StartupInputs.introHolding`, which is priority 0 in `resolveStartup` — safe to
+put first precisely because it is not an answer: it can only resolve to
+`restoring`, the surface the launch already sits on, and it releases itself
+after a ceiling whatever the screen does.
+
+Two things follow. Arm it **before `runApp`**, so the first read of the
+provider already reports the hold and no provider state is written during
+mount. And never introduce a delay that is not covered by real work: if boot
+finishes first the sequence simply ends, and if boot is still going the screen
+says so in words after a delay a quick launch never reaches.

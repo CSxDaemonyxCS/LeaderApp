@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/motion/motion_level.dart';
+import 'device_settings_bootstrap.dart';
 import 'settings_providers.dart';
 
 /// User-selectable animation quality, persisted via [SettingsRepository].
@@ -62,3 +63,14 @@ final motionLevelProvider =
     AsyncNotifierProvider<MotionLevelController, MotionLevel>(
   MotionLevelController.new,
 );
+
+/// The motion level the widget tree should use right now.
+///
+/// On a real launch [deviceSettingsSnapshotProvider] was hydrated before
+/// `runApp`, so Intro and Login never spend a frame on the balanced fallback
+/// while the async controller catches up. Once the controller has a value it
+/// remains the live source for changes made in Settings.
+final activeMotionLevelProvider = Provider<MotionLevel>((ref) {
+  return ref.watch(motionLevelProvider).valueOrNull ??
+      ref.watch(deviceSettingsSnapshotProvider).motionLevel;
+});

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/settings/data/device_settings_bootstrap.dart';
 import '../../features/settings/data/settings_providers.dart';
-import '../brand/brand_logo.dart';
 import 'app_palette.dart';
 import 'theme_choice.dart';
 import 'theme_state.dart';
@@ -76,10 +76,6 @@ class ThemeController extends AsyncNotifier<ThemeState> {
   /// reachable, and none of them implies another.
   Future<void> setEyeProtect(bool on) =>
       _apply(_current.copyWith(eyeProtect: on));
-
-  /// Picks which Leader mark the app draws. Purely cosmetic, and the
-  /// launcher icon is unaffected — see [BrandLogo].
-  Future<void> setLogo(BrandLogo logo) => _apply(_current.copyWith(logo: logo));
 }
 
 final themeControllerProvider =
@@ -90,5 +86,5 @@ final themeControllerProvider =
 /// watch this rather than unwrapping the async value themselves.
 final themeStateProvider = Provider<ThemeState>((ref) {
   return ref.watch(themeControllerProvider).valueOrNull ??
-      const ThemeState.initial();
+      ref.watch(deviceSettingsSnapshotProvider).theme;
 });

@@ -6,11 +6,14 @@
 /// remains canonical. The token is never persisted or logged.
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import '../../../core/env/build_mode.dart';
 import '../domain/onboarding_models.dart' show GoogleIdentityAssertion;
+import 'auth_providers.dart' show demoAccountsEnabledProvider;
 
 /// Android needs the OAuth web/server client id so the SDK can mint an ID
 /// token for the MTM backend audience. No identifier is committed here.
@@ -112,6 +115,28 @@ class GoogleSdkIdentityTokenClient implements GoogleIdentityTokenClient {
         throw const GoogleTokenClientException(
             GoogleTokenClientFailure.unavailable);
       }
+      // Drop this app's own cached Google session before asking for a new
+      // one, so the press reliably reaches the account chooser.
+      //
+      // `authenticate()` is already the button flow — on Android it issues a
+      // `GetSignInWithGoogleOption` credential request, which is the branded
+      // system chooser listing the device's Google accounts, with no
+      // authorized-account filter and no auto-select. What this adds is the
+      // plugin's own documented precondition: a client "should not call
+      // [authenticate] to obtain a new account until after a call to
+      // [signOut]". Someone who pressed the Google button *on purpose* is
+      // asking to choose, possibly a different account than last time.
+      //
+      // It clears nothing outside this app: not the device's Google
+      // accounts, not Android's own sign-in, and not any authorization grant
+      // (that is `disconnect()`, which is deliberately never called here). A
+      // failure to sign out is swallowed — it must never be the reason a
+      // sign-in cannot start.
+      try {
+        await signIn.signOut();
+      } catch (_) {
+        // Nothing to clear, or the platform does not support it.
+      }
       final account = await signIn.authenticate();
       final token = account.authentication.idToken;
       if (token == null || token.trim().isEmpty) {
@@ -181,4 +206,39 @@ final googleIdentityGatewayProvider = Provider<GoogleIdentityGateway>((ref) {
   return GoogleSdkIdentityGateway(
     GoogleSdkIdentityTokenClient(serverClientId: googleServerClientId),
   );
+});
+
+/// Whether a build running on [platform] may stand in for Google's own
+/// account chooser with the in-app development dialog.
+///
+/// **Never on a phone.** Android and iOS both have a real, system-owned
+/// Google account chooser, and on those platforms an app that put up its own
+/// «type your Google address» field would be doing the one thing a sign-in
+/// flow must never do: imitating the identity provider's UI. That dialog
+/// exists so the repository's Google paths — verified, unverified,
+/// method-link-required — are reachable on a desktop debug run and in this
+/// repository's tests, where no native chooser exists to open. It is a
+/// development *fixture*, not a fallback, so it is refused wherever the real
+/// thing is available and the honest outcome of a misconfigured build is
+/// [GoogleSignInUnavailable].
+///
+/// [demoAccountsAllowed] still gates it on top of this, so a release artefact
+/// does not contain the dialog at all.
+bool developmentGoogleChooserSupported({
+  required bool isWeb,
+  required TargetPlatform platform,
+}) =>
+    demoAccountsAllowed &&
+    !isWeb &&
+    platform != TargetPlatform.android &&
+    platform != TargetPlatform.iOS;
+
+/// Whether the Google button opens the development chooser instead of the
+/// SDK. A provider so a test can ask for either path explicitly.
+final googleDevelopmentChooserProvider = Provider<bool>((ref) {
+  return ref.watch(demoAccountsEnabledProvider) &&
+      developmentGoogleChooserSupported(
+        isWeb: kIsWeb,
+        platform: defaultTargetPlatform,
+      );
 });

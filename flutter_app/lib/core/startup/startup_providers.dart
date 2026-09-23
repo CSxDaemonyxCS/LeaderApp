@@ -6,6 +6,7 @@ import '../../features/auth/data/onboarding_controller.dart';
 import '../../features/platform/data/tenant_lifecycle_providers.dart';
 import '../access/capability_guard.dart';
 import '../time/clock.dart';
+import 'intro_gate.dart';
 import 'startup_destination.dart';
 
 /// The app's startup decision, as a provider.
@@ -23,6 +24,9 @@ import 'startup_destination.dart';
 final startupDestinationProvider = Provider<StartupDestination>((ref) {
   return resolveStartup(StartupInputs(
     now: ref.watch(clockProvider)(),
+    // The cold-launch brand hold. `IntroPhase.idle` in every process that did
+    // not arm it, so this reads `false` for every test and harness.
+    introHolding: ref.watch(introGateProvider) == IntroPhase.holding,
     upgradeBlocks: ref.watch(appVersionProvider).blocksApp,
     gate: ref.watch(authGateProvider),
     // The accepted account — `currentUserProvider` has already refused a

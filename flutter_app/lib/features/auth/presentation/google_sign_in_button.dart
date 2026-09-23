@@ -4,11 +4,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/env/build_mode.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../l10n/strings.dart';
-import '../data/auth_providers.dart';
 import '../data/google_identity_gateway.dart';
 import '../data/mock_onboarding_repository.dart'
     show kMockGoogleUnverifiedPrefix, kMockGoogleVerifiedPrefix;
@@ -27,12 +25,20 @@ import '../domain/onboarding_models.dart';
 /// becomes a progress ring, the label says so, and a second tap cannot start
 /// a second attempt.
 ///
-/// **Development build:** may show a small in-app chooser that produces the same
+/// **On a phone it is always the platform's own chooser.** Pressing it runs
+/// [googleIdentityGatewayProvider], which calls the SDK's `authenticate()` —
+/// on Android the system "Sign in with Google" credential sheet listing the
+/// device's accounts. This app never renders a Google account list, never
+/// asks anyone to type a Google address, and never enumerates device
+/// accounts.
+///
+/// **The one exception is a desktop/CI development run**, where no native
+/// chooser exists: there a small in-app dialog produces the same
 /// `mock-google:<email>` / `mock-google-unverified:<email>` convention
 /// `MockOnboardingRepository` already expects, so the verified, unverified and
-/// method-link-required paths are all reachable in this repository's tests
-/// and in a debug run. **Every other build** goes through the production
-/// [googleIdentityGatewayProvider].
+/// method-link-required paths stay reachable in this repository's tests. See
+/// [googleDevelopmentChooserProvider] — it is `false` on Android and iOS, and
+/// absent altogether from a release artefact.
 class GoogleSignInButton extends ConsumerStatefulWidget {
   const GoogleSignInButton({
     super.key,
@@ -72,8 +78,7 @@ class _GoogleSignInButtonState extends ConsumerState<GoogleSignInButton> {
 
   Future<void> _tap() async {
     if (_pending) return;
-    final useDevelopmentChooser =
-        demoAccountsAllowed && ref.read(demoAccountsEnabledProvider);
+    final useDevelopmentChooser = ref.read(googleDevelopmentChooserProvider);
     final GoogleSignInAttempt attempt;
     if (useDevelopmentChooser) {
       // The modal chooser is itself the in-progress surface and already

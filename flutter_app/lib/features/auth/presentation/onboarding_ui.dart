@@ -52,6 +52,7 @@ String onboardingErrorMessage(OnboardingErrorKind kind) => switch (kind) {
       OnboardingErrorKind.verificationEnded => S.onboardingVerificationEnded,
       OnboardingErrorKind.resendThrottled => S.onboardingResendThrottled,
       OnboardingErrorKind.googleRetry => S.onboardingGoogleRetry,
+      OnboardingErrorKind.googleUnavailable => S.onboardingGoogleUnavailable,
       OnboardingErrorKind.methodLinkRequired => S.onboardingMethodLinkRequired,
       OnboardingErrorKind.unsupportedMethod => S.onboardingUnsupportedMethod,
       OnboardingErrorKind.teamCodeMalformed => S.onboardingTeamCodeMalformed,

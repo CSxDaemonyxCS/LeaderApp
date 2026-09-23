@@ -47,14 +47,13 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
-  # Brand artwork. The three approved Leader marks — `leader_logo_*.png`,
-  # one per `BrandLogo` variant (`lib/core/brand/brand_logo.dart`) — plus the
-  # legacy `mtm_logo_full.png`, kept bundled but no longer drawn.
-  #
-  # `leader_logo_clean_layer.png` is the default in-app mark AND the artwork
-  # the Android launcher icon is generated from
-  # (`android/app/src/main/res/mipmap-*`). The launcher icon is fixed for
-  # everyone; only the in-app mark follows the user's choice.
+  # Brand artwork. ONE mark: `leader_logo_clean_layer.png` — `06 · Clean
+  # Layer` — drawn by `core/brand/brand_mark.dart` and the artwork the Android
+  # launcher icon is generated from (`android/app/src/main/res/mipmap-*`), so
+  # the icon on the home screen and the mark inside the app are the same
+  # object. It is not a preference; the two alternates that were briefly
+  # selectable in Settings are gone. The legacy `mtm_logo_full.png` stays
+  # bundled but is no longer drawn.
   assets:
     - assets/brand/
 

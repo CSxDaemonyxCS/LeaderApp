@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:mtm/core/brand/brand_logo.dart';
+import 'package:mtm/core/app_info.dart';
+import 'package:mtm/core/brand/brand_mark.dart';
 import 'package:mtm/core/display/frame_rate.dart';
 import 'package:mtm/core/motion/motion_level.dart';
 import 'package:mtm/core/result/result.dart';
@@ -13,6 +14,7 @@ import 'package:mtm/core/theme/theme_controller.dart';
 import 'package:mtm/core/widgets/made_in_iraq.dart';
 import 'package:mtm/features/auth/data/auth_providers.dart';
 import 'package:mtm/features/auth/data/mock_auth_repository.dart';
+import 'package:mtm/features/auth/presentation/entry_glass.dart';
 import 'package:mtm/features/auth/presentation/google_sign_in_button.dart';
 import 'package:mtm/features/auth/presentation/login_page.dart';
 import 'package:mtm/features/settings/data/settings_providers.dart';
@@ -20,17 +22,20 @@ import 'package:mtm/features/settings/domain/settings_models.dart';
 import 'package:mtm/features/settings/domain/settings_repository.dart';
 import 'package:mtm/l10n/strings.dart';
 
-/// The green/glass Login screen.
+/// The Leader sign-in screen.
 ///
-/// Two things are being pinned. **What is on it** — the Leader mark the user
-/// picked, the wordmark, the welcome, two fields, forgot, the CTA, أو,
-/// Google, sign-up and «صنع بفخر في العراق» — and, just as deliberately,
-/// **what is not**: no demo entry, no persona card, no credential hint.
+/// Three things are being pinned. **What is on it** — the welcome, one
+/// supporting line, two fields, forgot, the CTA, أو, Google, sign-up and
+/// «صنع بفخر في العراق». **What is deliberately not**: no demo entry, no
+/// persona card, no credential hint — and, since the entry redesign, no mark
+/// and no standalone «ليدر» above the heading. The launcher icon and the
+/// launch intro have already shown the mark; the screen used to state the
+/// brand three times before anything the person came to do.
 ///
 /// And **that it holds up**: 320 / 360 / 390 / 430dp, 1.6× text, an open
 /// keyboard, and all four appearances, with no overflow in any of them. The
-/// harness deliberately does not swallow overflow reports, so every pump
-/// here is also a fit check.
+/// harness deliberately does not swallow overflow reports, so every pump here
+/// is also a fit check.
 class _ThemeOnlyRepository implements SettingsRepository {
   _ThemeOnlyRepository(this.stored);
 
@@ -73,9 +78,9 @@ void main() {
     double height = 844,
     double textScale = 1,
     double keyboard = 0,
-    BrandLogo? logo,
     ThemeMode mode = ThemeMode.light,
     bool eyeProtect = false,
+    MotionLevel level = MotionLevel.balanced,
   }) async {
     tester.view.physicalSize = Size(width * 3, height * 3);
     tester.view.devicePixelRatio = 3;
@@ -86,13 +91,12 @@ void main() {
           .overrideWithValue(MockAuthRepository(demoAccountsEnabled: false)),
       settingsRepositoryProvider.overrideWithValue(
         _ThemeOnlyRepository(
-          logo == null && mode == ThemeMode.light && !eyeProtect
+          mode == ThemeMode.light && !eyeProtect
               ? null
               : ThemeState(
                   palette: PaletteId.medical,
                   mode: mode,
                   eyeProtect: eyeProtect,
-                  logo: logo ?? BrandLogo.fallback,
                 ),
         ),
       ),
@@ -111,32 +115,30 @@ void main() {
               .copyWith(textScaler: TextScaler.linear(textScale)),
           child: Directionality(
             textDirection: TextDirection.rtl,
-            child: child ?? const SizedBox.shrink(),
+            child: MotionScope(
+              level: level,
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         ),
       ),
     ));
-    await tester.pumpAndSettle();
+    // The entry surface runs a looping pulse, so `pumpAndSettle` would never
+    // return. Bounded pumps drain the auth restore instead.
+    await tester.pump();
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 400));
+    }
     expect(find.byType(LoginPage), findsOneWidget);
     return (container, router);
   }
 
-  String markAsset(WidgetTester tester) => (tester
-          .widget<Image>(find.byKey(const Key('login-brand-mark')))
-          .image as AssetImage)
-      .assetName;
-
   group('what the screen says', () {
-    testWidgets('carries the brand, the welcome and every way in',
-        (tester) async {
+    testWidgets('carries the welcome and every way in', (tester) async {
       await boot(tester);
 
-      // Brand: the mark, then the Arabic wordmark.
-      expect(find.byKey(const Key('login-brand-mark')), findsOneWidget);
-      expect(find.text(S.productNameAr), findsOneWidget);
-      expect(S.productNameAr, 'ليدر');
-
-      // Heading, and the one supporting line under it.
+      // Heading, and the one supporting line under it. The heading is where
+      // the brand is said — once.
       expect(find.text(S.loginTitle), findsOneWidget);
       expect(S.loginTitle, 'مرحباً بك في ليدر');
       expect(find.text(S.loginSub), findsOneWidget);
@@ -177,6 +179,47 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('says the brand once, and draws no mark', (tester) async {
+      await boot(tester);
+
+      // No logo block: the artwork is not on this screen at all.
+      expect(find.byKey(BrandMark.widgetKey), findsNothing);
+      expect(
+        tester
+            .widgetList<Image>(find.byType(Image))
+            .where((i) =>
+                i.image is AssetImage &&
+                (i.image as AssetImage).assetName == AppInfo.logoAsset),
+        isEmpty,
+        reason: 'the mark belongs to the launcher and the intro',
+      );
+      // No standalone «ليدر» either — only the heading that contains it.
+      expect(find.text(S.productNameAr), findsNothing);
+      expect(find.text(S.loginTitle), findsOneWidget);
+      expect(
+        tester
+            .widgetList<Text>(find.byType(Text))
+            .where((t) => (t.data ?? '').contains(S.productNameAr))
+            .length,
+        1,
+        reason: 'the product name appears exactly once, inside the heading',
+      );
+    });
+
+    testWidgets('the heading opens the screen, above the panel',
+        (tester) async {
+      await boot(tester);
+      final rule = tester.getRect(find.byKey(const Key('login-brand-rule')));
+      final title = tester.getRect(find.text(S.loginTitle));
+      final sub = tester.getRect(find.text(S.loginSub));
+      final email = tester.getRect(find.byKey(const Key('login-email')));
+
+      expect(rule.bottom, lessThanOrEqualTo(title.top));
+      expect(title.bottom, lessThanOrEqualTo(sub.top));
+      expect(sub.bottom, lessThan(email.top),
+          reason: 'the supporting copy sits on the ground, not in the form');
+    });
+
     testWidgets('offers no shortcut past the front door', (tester) async {
       await boot(tester);
 
@@ -204,9 +247,9 @@ void main() {
       expect(find.bySemanticsLabel(S.showPassword), findsOneWidget);
 
       await tester.ensureVisible(toggle);
-      await tester.pumpAndSettle();
+      await tester.pump();
       await tester.tap(toggle);
-      await tester.pumpAndSettle();
+      await tester.pump();
 
       expect(tester.widget<TextField>(field).obscureText, isFalse);
       expect(find.bySemanticsLabel(S.hidePassword), findsOneWidget);
@@ -232,30 +275,46 @@ void main() {
     });
   });
 
-  group('the mark it draws', () {
-    testWidgets('is Clean Layer on an untouched install', (tester) async {
+  group('the ambient pulse', () {
+    testWidgets('runs at the default motion level', (tester) async {
       await boot(tester);
-      expect(markAsset(tester), BrandLogo.cleanLayer.asset);
+      expect(find.byType(EntryPulse), findsOneWidget);
+      expect(tester.hasRunningAnimations, isTrue);
     });
 
-    for (final logo in BrandLogo.values) {
-      testWidgets('follows the stored choice — ${logo.name}', (tester) async {
-        await boot(tester, logo: logo);
-        expect(markAsset(tester), logo.asset);
+    for (final (label, level) in const [
+      ('the lightest performance level', MotionLevel.performance),
+      ('a level with ambience off', MotionLevel.low),
+    ]) {
+      testWidgets('stops entirely at $label', (tester) async {
+        await boot(tester, level: level);
+        // Still composed — it draws one fixed frame — but no controller.
+        expect(find.byType(EntryPulse), findsOneWidget);
+        expect(tester.hasRunningAnimations, isFalse);
+        expect(find.text(S.loginTitle), findsOneWidget);
+        expect(find.widgetWithText(FilledButton, S.signIn), findsOneWidget);
       });
     }
 
-    testWidgets('changes with the preference, without a reload',
-        (tester) async {
-      final (container, _) = await boot(tester);
-      expect(markAsset(tester), BrandLogo.cleanLayer.asset);
-
-      await container
-          .read(themeControllerProvider.notifier)
-          .setLogo(BrandLogo.elegantCurve);
+    testWidgets('never sits in front of a control', (tester) async {
+      await boot(tester);
+      // It is inside an `IgnorePointer`, so it takes no hit test...
+      expect(
+        find.ancestor(
+          of: find.byType(EntryPulse),
+          matching: find.byType(IgnorePointer),
+        ),
+        findsWidgets,
+      );
+      // ...and a tap at a control's centre still reaches the control, rather
+      // than the full-screen painter drawn over the same pixels.
+      final toggle = find.byKey(const Key('login-password-toggle'));
+      final field = find.byKey(LoginField.keyFor(S.passwordLabel));
+      expect(tester.widget<TextField>(field).obscureText, isTrue);
+      await tester.tap(toggle);
       await tester.pump();
-
-      expect(markAsset(tester), BrandLogo.elegantCurve.asset);
+      expect(tester.widget<TextField>(field).obscureText, isFalse);
+      expect(tester.takeException(), isNull);
     });
   });
 
@@ -278,7 +337,7 @@ void main() {
       // It lengthens and scrolls rather than clipping.
       expect(find.byType(Scrollable), findsWidgets);
       await tester.ensureVisible(find.byKey(MadeInIraqFooter.widgetKey));
-      await tester.pumpAndSettle();
+      await tester.pump();
       expect(tester.takeException(), isNull);
     });
 
@@ -287,9 +346,9 @@ void main() {
       expect(tester.takeException(), isNull);
 
       await tester.tap(find.byKey(LoginField.keyFor(S.passwordLabel)));
-      await tester.pumpAndSettle();
+      await tester.pump();
       await tester.ensureVisible(find.widgetWithText(FilledButton, S.signIn));
-      await tester.pumpAndSettle();
+      await tester.pump();
       expect(tester.takeException(), isNull);
     });
 
@@ -301,7 +360,7 @@ void main() {
         ('the password eye', find.byKey(const Key('login-password-toggle'))),
       ]) {
         await tester.ensureVisible(target);
-        await tester.pumpAndSettle();
+        await tester.pump();
         expect(tester.getRect(target).height, greaterThanOrEqualTo(48),
             reason: name);
       }

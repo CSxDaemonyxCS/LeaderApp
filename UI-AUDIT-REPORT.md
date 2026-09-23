@@ -927,7 +927,7 @@ banner copy and the "end trial" relabelling in Settings are correct in source.
 
 | Concern | State |
 | --- | --- |
-| Colour | **Excellent.** One token set, `context.c`, six palettes, contrast enforced by `palette_contrast_test.dart`. No hard-coded colour found outside `LoginGlass`, which is deliberate. |
+| Colour | **Excellent.** One token set, `context.c`, six palettes, contrast enforced by `palette_contrast_test.dart`. No hard-coded colour found outside the entry surface (`EntryGlass`, formerly `LoginGlass`), which is deliberate and is now held to WCAG AA by `test/features/auth/entry_surface_test.dart`. |
 | Radius / spacing | **Good.** `AppRadii` / `AppSpacing` used consistently — except Login, which spells its own. |
 | Typography | **Good, and now enforced by habit.** `AppTypography` + `AppTypography.digits` for tabular figures. Two widgets had set a `TextStyle` with no family and fell off the app family — `labelSmall` (Phase 2) and `AnimatedTabBar` (Phase 3A, which drew every tab label as placeholder boxes). No widget sets a style that is not derived from a token. |
 | Page shell | **Split, narrowing.** `PlatformPage` on one surface; the tenant side has `ReadingColumn` and the shared measure scale, applied to Settings/Themes/Sync/Pricing/Organization/Plan and, since Phase 3A, to Home and Statistics under a written four-class policy. The remaining operational screens (lists, Shifts) are Phase 3B. |

@@ -13,6 +13,8 @@ class MockSettingsRepository implements SettingsRepository {
   MockSettingsRepository({LocalStore? localStore}) : _localStore = localStore;
 
   static const themePrefsKey = 'mtm.settings.theme';
+  static const motionLevelKey = 'mtm.settings.motion';
+  static const frameRateKey = 'mtm.settings.frame_rate';
 
   final LocalStore? _localStore;
   final _rand = Random(71);
@@ -24,8 +26,8 @@ class MockSettingsRepository implements SettingsRepository {
     joinRequests: false,
   );
 
-  // In-memory persistence for the mock. A real repo would write to
-  // shared_preferences / a keychain / the server.
+  // Caches for the device-level preferences. The LocalStore remains the
+  // source of truth across repository recreation and process death.
   MotionLevel? _motionLevel;
   FrameRatePreference? _frameRate;
   ThemeState? _themePrefs;
@@ -50,39 +52,43 @@ class MockSettingsRepository implements SettingsRepository {
 
   @override
   Future<Result<MotionLevel?>> motionLevel() async {
-    await _latency();
-    return Success(_motionLevel);
+    if (_motionLevel case final cached?) return Success(cached);
+    final raw = await _localStore?.readString(motionLevelKey);
+    if (raw == null) return const Success(null);
+    final restored = MotionLevel.fromJson(raw);
+    _motionLevel = restored;
+    return Success(restored);
   }
 
   @override
   Future<Result<MotionLevel>> updateMotionLevel(MotionLevel level) async {
-    await _latency();
     _motionLevel = level;
+    await _localStore?.writeString(motionLevelKey, level.toJson());
     return Success(level);
   }
 
   @override
   Future<Result<FrameRatePreference?>> frameRate() async {
-    await _latency();
-    return Success(_frameRate);
+    if (_frameRate case final cached?) return Success(cached);
+    final raw = await _localStore?.readString(frameRateKey);
+    if (raw == null) return const Success(null);
+    final restored = FrameRatePreference.fromJson(raw);
+    _frameRate = restored;
+    return Success(restored);
   }
 
   @override
   Future<Result<FrameRatePreference>> updateFrameRate(
       FrameRatePreference p) async {
-    await _latency();
     _frameRate = p;
+    await _localStore?.writeString(frameRateKey, p.toJson());
     return Success(p);
   }
 
   /// Deliberately **not** behind [_latency].
   ///
-  /// This one read sits on the launch path: the first frames paint with
-  /// `ThemeState.initial()` until it returns, so half a second of simulated
-  /// network would show every user the default theme and then visibly swap
-  /// it. The other settings here model a server round-trip; a theme
-  /// preference is a local read in any real implementation, and pretending
-  /// otherwise only manufactures a flash that the shipped app will not have.
+  /// This read sits on the launch path alongside motion and frame rate. All
+  /// three are local device preferences; none models a server round trip.
   @override
   Future<Result<ThemeState?>> themePrefs() async {
     if (_themePrefs case final cached?) return Success(cached);

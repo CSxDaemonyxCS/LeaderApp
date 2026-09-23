@@ -21,6 +21,11 @@ this package starts it.
 | `SCREEN-ROUTE-MATRIX.md` | Every route and the repository behind it | Route → seam mapping |
 | `HANDOFF.md` | Why each decision was taken, per Point | Rationale and provenance only |
 
+**Start at §19 — BACKEND IMPLEMENTATION READINESS.** It is the one-page index
+of what is implementable now, what is waiting on external configuration, what
+is an unresolved product or data decision, and what is frontend-only and must
+never grow an endpoint. Everything else in this file is the detail behind it.
+
 Conventions used below: **[AGREED]** = in `API_CONTRACT.md` as a settled `v1`
 contract; **[FUTURE]** = fully specified future contract, no backend yet;
 **[OPEN]** = the backend/product must decide (listed in §15.6);
@@ -934,11 +939,23 @@ Summary — **nothing is committed and nothing may be fabricated**:
   `iss`, `aud` (= `MTM_GOOGLE_SERVER_CLIENT_ID`), `exp` and `email_verified`;
   map the subject per the identity rules; never log the token.
 - **Secure storage / minSdk:** credentials live only in
-  `flutter_secure_storage` (Android Keystore-backed), which raised Android
-  `minSdk` to **23** — devices below Android 6.0 cannot install the app. A
-  record that cannot be read (for example after a device restore) is deleted
-  and the device starts signed out — never repaired (the Point 17C
-  corrupt-record rule).
+  `flutter_secure_storage` (Android Keystore-backed), whose floor is API
+  **23**. The app does not pin a value — `android/app/build.gradle.kts` uses
+  `minSdk = flutter.minSdkVersion`, which on the toolchain in this repo
+  resolves to **24**, comfortably above both that floor and the 23 that
+  Credential Manager's Google ID flow needs. Nothing to change; read the
+  effective number from the toolchain, not from this file. A record that
+  cannot be read (for example after a device restore) is deleted and the
+  device starts signed out — never repaired (the Point 17C corrupt-record
+  rule).
+- **Native chooser, cancellation, unavailability (entry pass, 2026-09-23).**
+  Android uses the system Google account sheet (`signOut()` then
+  `authenticate()`); the app never asks anyone to type a Google address, a
+  dismissed sheet is silent and is **not** a failed authentication attempt,
+  and every configuration fault collapses to one generic non-secret
+  "unavailable" message. None of this changes the wire: `/auth/google` still
+  receives `{idToken}` and still verifies it against the same Web client ID
+  audience. Full statement in `API_CONTRACT.md` → "Google (machine A)".
 - Other external dependencies the backend owns: transactional email (OTP,
   invitations, setup, "someone tried to sign up with your address"), minimum
   supported client version for the `426` gate, push (none designed).
@@ -1303,3 +1320,128 @@ Until these endpoints exist, subscription is completed by **contacting Leader**
 (Telegram, WhatsApp, email). The client says so plainly and offers no purchase
 action. The client-side control plane is process memory, is never persisted, and
 is not financial authority in any sense.
+
+---
+
+## 19. BACKEND IMPLEMENTATION READINESS
+
+*Audited 2026-09-23, against the working tree at the entry-experience
+checkpoint (Leader logo simplification, the new Login, EntryPulse, the
+cold-launch intro, native Google sign-in). This section is the single index of
+"can backend work start, and what is it still waiting on". It adds no new
+contract; every row points at the section that owns the detail.*
+
+**No backend stack is chosen here.** Language, framework, database, cache,
+queue, cloud provider, hosting and CI remain undecided and are deliberately
+not implied by anything in this package. The contract is expressed as HTTP
+resources, state machines, error codes and invariants precisely so that
+choice stays open.
+
+### 19.1 Already contractually defined — implementable now
+
+| Area | Owner section |
+| --- | --- |
+| Domain model, identifiers, tenancy boundary (`SaasTenant` → `DetachmentGroup` → `Detachment`) | §1, §2 |
+| Roles (`super_admin`, `main_admin`, `admin`) and the capability model | §3, `CAPABILITIES.md` |
+| Authorization order: session → account lifecycle → tenant lifecycle → role/surface → Feature Flag → Capability → Plan Limit | §4 |
+| Sign-in outcomes, `GET /auth/me` / `SessionAccess`, sign-out, sessions, MFA, enumeration-safe reset | §6.1, `API_CONTRACT.md` |
+| Rotating single-use refresh with family revocation — `POST /api/v1/auth/refresh` | §6.1, §15.1 |
+| Google ID-token verification and backend-owned identity mapping | §14, `API_CONTRACT.md` → "Google (machine A)" |
+| Sign-up / OTP challenge / restricted onboarding session / Team Code link / atomic setup completion | §5, §6.1 |
+| Simple Admin invitation lifecycle — `pending` → `accepted` **atomically**, cancelled and expired can never be consumed, retry idempotent | §5, §13 |
+| Customer Demo: isolated, **not** a `SaasTenant`, no Team Code, no production membership, no sync/outbox; `DemoPolicy` / `DemoSession`, enabled + default duration + revision, expiry and termination, server time authoritative, duplicate start resumes, cleanup preserves immutable audit | §12 |
+| Optimistic concurrency (`version`, `stale_write`) and idempotency keys | §7, `FRONTEND-BACKEND-INTEGRATION.md` §5 |
+| RFC 9457-ready error envelope; branch on `code`, never on text | §8 |
+| Sync push/pull responsibilities | §9, `FRONTEND-BACKEND-INTEGRATION.md` §3 |
+| Audit events and the redaction rules — admin/capability changes, Demo management, commerce later; **secrets and tokens never logged** | §10, §11, §18.9 |
+| Platform report projections that structurally cannot expose tenant medical or operational data | §11, `mtm-platform-reports` scope |
+| Workshops: nullable `memberId` participant identity, organisers outside participant capacity, organiser/participant exclusivity, duplicate and capacity rules, attendance, payment state, remove-participant ≠ delete `TeamMember`, archive/restore as lifecycle state, statistics | §6.3, `API_CONTRACT.md` → Workshops |
+| Commerce shape: $6 / $14 / $24 / $40 (`600` / `1400` / `2400` / `4000` integer cents), all durations full access, `GlobalOffer` vs `Coupon`, percentage/fixed, uppercase normalization, **validation never redeems**, best final price wins, tie → Global Offer, Super Admin mutation authority, checkout the only redeeming endpoint | §18, `PRICING-PROMOTIONS-ARCHITECTURE.md` |
+
+Build order: §17.
+
+### 19.2 Requires external credentials or configuration — not code
+
+Nothing in the repository can supply these, and none may be fabricated.
+
+1. Google Cloud project with Google Identity / Credential Manager available.
+2. **Android OAuth client for package `com.leader.teams`**, registered with the
+   SHA-1 (and SHA-256 where asked) of **every** keystore that signs a build
+   people sign in from — the debug keystore for development, the production
+   upload key, and the Play App Signing key if used. A client registered for
+   the old `com.mtm.mtm` package does not cover it.
+3. **Web application OAuth client** in the same project. Its client ID is the
+   app's `serverClientId` and the **audience** the backend verifies `aud`
+   against. Supplied at build time as
+   `--dart-define=MTM_GOOGLE_SERVER_CLIENT_ID=<web client id>` — **the env key
+   keeps its historical `MTM_` name on purpose; it is a technical identifier,
+   not branding, and renaming it breaks every existing build script.**
+4. A production release keystore — `release` is still signed with debug keys.
+5. Published OAuth consent screen. iOS and web are not configured and are not
+   in scope.
+6. Transactional email (OTP, invitations, setup, "someone tried to sign up
+   with your address").
+7. The minimum supported client version that drives the `426` gate.
+
+Until 1–3 and 5 exist the Google button correctly reports *unavailable*; that
+is configuration, not a defect, and not something `/auth/google` can fix.
+
+### 19.3 Unresolved product decisions — backend must not invent an answer
+
+1. Multi-detachment membership for one volunteer (`DATA-NEEDS.md` §4.1).
+2. Detachment and workshop status value sets (§4.2).
+3. Patient register in scope or not (§4.4).
+4. Shift draft/published distinction and `shift.publish` (§4.5).
+5. Announcement recipient fan-out and where announcement history lives
+   (§4.7, §4.8); read state is deliberately absent (§4.9).
+6. Whether workshop statistics need their own read capability (§4.14).
+7. Terms of Use, Privacy Policy, consent and versioning — a pre-production
+   product/legal requirement (§15.4); engineering drafts no legal text.
+8. Break-glass grant-scoped tenant-data viewer, after the recent-auth
+   mechanism is designed (§16.7, §17.10).
+9. Whether `GET /settings/organization` is kept or retired (§16.9).
+10. Whether workshop **payment** becomes an operational, money-moving feature.
+    If it does, the backend owns the authoritative mutation — the frontend's
+    current local payment display establishes no authority whatsoever.
+
+### 19.4 Unresolved data requirements
+
+The seven live frontend→backend data dependencies are enumerated once, in
+`DATA-NEEDS.md` §16. They are **not** frontend defects and must not be closed
+by making the UI claim data it does not have. Summary: cross-detachment Home
+aggregation; explicit dates/ranges on `DetachmentStats` series; the unit and
+meaning of historical stock series; the `attendanceSeries` product semantics;
+historical roster-size trend; authoritative workshop payment mutation; real
+`.xlsx` generation.
+
+Also open: a terminal rejection state for replayed writes (§9 item 4,
+`DATA-NEEDS.md` §4.11), plan-limit rejections on tenant creates (§4.13) and
+capability freshness / grant revision (§4.12).
+
+### 19.5 Explicitly frontend-only — no endpoint, no table, no contract
+
+Do not add backend persistence for any of these unless the product changes.
+
+- **Appearance**: palette (six), Light/Dark/System, **Eye Protection**. Device
+  preference, durable local key `mtm.settings.theme`.
+- **Performance / smoothness**: motion level (`mtm.settings.motion`) and frame
+  rate (`mtm.settings.frame_rate`), plus reduced-motion behaviour derived from
+  `MediaQuery.disableAnimations`. The historical
+  `GET`/`PUT /settings/motion-level` contract is **superseded** — see
+  `API_CONTRACT.md` and `FRONTEND-BACKEND-INTEGRATION.md` §8.
+- **Brand and entry visuals**: the fixed Clean Layer launcher identity, the
+  removed logo selector, the cold-launch intro and the EntryPulse ambience.
+  These are rendering, not state. No API, no flag, no stored preference, and
+  nothing about them belongs in an auth or settings response.
+- Notification read state and cleared announcement history are client-local
+  today; a server that owns one would own the other (§4.8) — a product
+  decision, not a gap.
+
+### 19.6 Standing truth about this repository
+
+There is **no backend implementation and no HTTP layer here** — every seam is
+a Riverpod provider over an in-memory or `LocalStore`-backed mock (§16). The
+pricing and Platform commerce surfaces are explicitly DEV/TEST-ONLY process
+memory with no financial authority (§18.10); the client offers no purchase
+action and says so plainly. Nothing in this package should be read as a claim
+that a server exists.

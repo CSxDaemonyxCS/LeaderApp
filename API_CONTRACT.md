@@ -3260,6 +3260,36 @@ identity, capability or operational record.
   closed as *unavailable* before any SDK UI; see "Google external
   configuration" below. **The backend** verifies signature, issuer,
   audience and expiry and reads `email`/`email_verified`; Flutter reads no claim.
+- **Native account chooser (entry pass, 2026-09-23) — no wire change.** On
+  Android the gateway calls `signOut()` and then `authenticate()`, which issues
+  a `GetSignInWithGoogleOption` credential request: the system "Sign in with
+  Google" sheet, listing the device's own accounts, with no authorized-account
+  filter and no auto-select. The `signOut()` clears **this app's** Google
+  session only so a second tap can pick a different account; `disconnect()` is
+  never called, no authorization grant is revoked, and a refused sign-out is
+  swallowed rather than blocking sign-in. **The frontend no longer asks anyone
+  to type a Google address** — there is no Google email field on `/login` or
+  `/signup` in a release build. The backend sees exactly the same
+  `POST /api/v1/auth/google` `{idToken}` either way; this is recorded so the
+  backend does not build an email-entry path nobody calls.
+- **Cancellation is not an authentication failure.** A dismissed sheet is
+  silent: no request is sent, nothing is logged as a failed attempt, no
+  rate-limit counter moves, and no error is shown. Only an *obtained* token
+  ever reaches `/auth/google`, so the backend must not infer attempts from
+  chooser activity — it cannot see it.
+- **Unavailable is a distinct, non-secret state.** A missing/misconfigured
+  `MTM_GOOGLE_SERVER_CLIENT_ID`, an unregistered package/SHA-1, a missing
+  plugin or no picker UI all collapse to `OnboardingErrorKind.googleUnavailable`
+  and one generic Arabic sentence ("Google sign-in is not available in this
+  build"), never "try again" — trying again cannot work. No provider code,
+  message, client id, token or fingerprint crosses the gateway or reaches a
+  log, a screen or a crash report. The backend's own Google refusals
+  (`google_assertion_rejected`, `unsupported_auth_method`) must hold the same
+  line.
+- **External OAuth configuration is deployment work, not backend code.** The
+  console clients, fingerprints, consent screen and keystores below are *not*
+  satisfied by implementing `/auth/google`; both are required before anyone can
+  sign in with Google.
 - `email_verified=true` → Leader verification is skipped; `false` → a challenge.
 - Identity mapping is backend-owned: an account already holding the Google
   subject signs in; a **provisioned, unclaimed** account or an **unverified**
@@ -4448,30 +4478,29 @@ shown with its `readAt` and a distinct offline vs. refresh-failed notice.
 Errors: `tenant_context_unavailable`, otherwise the shared `ProblemCode`
 pipeline (`server`, `not_found`, …).
 
-#### `SettingsRepository.motionLevel`
+#### `SettingsRepository.motionLevel` / `updateMotionLevel` — **DEVICE-LOCAL, no endpoint**
 
-`GET /api/v1/settings/motion-level` — access bearer required
+**Superseded (entry pass, 2026-09-23). Do not implement these two calls.**
+Motion level is a per-device performance preference, not account state: it is
+read and written through `SettingsRepository` against the durable `LocalStore`
+key `mtm.settings.motion`, never over the wire. The historical contract below
+is kept only so nobody re-derives it, and it is stale in two ways — the enum is
+no longer two-valued, and the round trip never happens.
 
-Request: no body.
+Current value set (`core/motion/motion_level.dart`):
+`performance`, `low`, `balanced`, `high`, `maximum` — persisted by **name**,
+never by index. `full` and `reduced` survive as source-compatibility aliases
+for `high` and `performance` respectively; a stored `full`/`reduced` from an
+older build still reads. Default is `balanced`, or `performance` when the OS
+reports `MediaQuery.disableAnimations` and nothing is stored yet.
 
-Response `200`:
+The same ruling covers appearance (`mtm.settings.theme` — palette, light/dark/
+system, Eye Protection) and frame rate (`mtm.settings.frame_rate`). See
+`FRONTEND-BACKEND-INTEGRATION.md` §8 for the full boundary and the reasoning.
 
-```json
-{
-  "motionLevel": "reduced"
-}
-```
+<details><summary>Historical two-value contract — superseded, not to be built</summary>
 
-`motionLevel` is `full`, `reduced`, or `null` on first use.
+`GET /api/v1/settings/motion-level`, `PUT /api/v1/settings/motion-level`,
+access bearer required, body `{"motionLevel": "full" | "reduced" | null}`.
 
-#### `SettingsRepository.updateMotionLevel`
-
-`PUT /api/v1/settings/motion-level` — access bearer required
-
-Request and response `200`:
-
-```json
-{
-  "motionLevel": "full"
-}
-```
+</details>

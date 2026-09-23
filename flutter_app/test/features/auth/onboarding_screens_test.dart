@@ -20,6 +20,8 @@ import 'package:mtm/features/shell/main_shell.dart';
 import 'package:mtm/features/auth/presentation/login_page.dart';
 import 'package:mtm/l10n/strings.dart';
 
+import '../../entry_settle.dart';
+
 /// Point 17B — the production onboarding screens, exercised through the real
 /// app router and real widgets (never the Point 17A holding pages, which this
 /// point retired), against the **real, unoverridden**
@@ -63,7 +65,9 @@ void main() {
         ),
       ),
     ));
-    await tester.pumpAndSettle();
+    // Bounded: the app opens on the entry surface, whose ambient pulse loops
+    // for as long as it is on screen.
+    await settleEntry(tester);
     return (container, router);
   }
 
@@ -236,9 +240,9 @@ void main() {
       final password = find.byKey(LoginField.keyFor(S.passwordLabel));
       await tester.enterText(password, kMockFixturePassword);
       await tester.ensureVisible(find.text(S.signIn));
-      await tester.pumpAndSettle();
+      await settleEntry(tester);
       await tester.tap(find.text(S.signIn));
-      await tester.pumpAndSettle();
+      await settleEntry(tester);
 
       // `readyEmail` is seeded with no capability grant at all — a valid
       // authorization outcome (`tenantNoAccess`), not a step of the journey.

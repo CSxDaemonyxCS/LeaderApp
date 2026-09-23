@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mtm/core/access/capability.dart';
+import 'package:mtm/core/brand/brand_mark.dart';
 import 'package:mtm/core/motion/motion_level.dart';
 import 'package:mtm/core/result/result.dart';
 import 'package:mtm/core/theme/app_theme.dart';
@@ -10,6 +11,7 @@ import 'package:mtm/core/theme/theme_state.dart';
 import 'package:mtm/core/widgets/status_screen.dart';
 import 'package:mtm/features/auth/data/auth_providers.dart';
 import 'package:mtm/features/auth/domain/auth_models.dart';
+import 'package:mtm/features/auth/presentation/entry_glass.dart';
 import 'package:mtm/features/auth/presentation/startup_page.dart';
 import 'package:mtm/features/auth/presentation/status_pages.dart';
 import 'package:mtm/l10n/strings.dart';
@@ -132,52 +134,44 @@ void main() {
   });
 
   group('the startup surface', () {
+    // It is the Leader launch experience now (`LeaderIntro`), reached here
+    // directly rather than through a cold launch — the gate is unarmed, so
+    // the screen draws its resolved composition with no entrance to play.
     testWidgets('is branded, neutral and mentions no network', (tester) async {
       await _pump(tester, const StartupPage());
 
+      expect(find.byKey(BrandMark.widgetKey), findsOneWidget);
+      expect(find.text(S.productNameAr), findsOneWidget);
       expect(find.text(S.startupRestoring), findsOneWidget);
-      expect(find.byType(Image), findsOneWidget);
       // It must not leak the previous session.
       expect(find.text(_me.name), findsNothing);
       expect(find.text(_me.orgName), findsNothing);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('loops nothing at the lowest performance level',
         (tester) async {
       await _pump(tester, const StartupPage(), level: MotionLevel.performance);
-      final bar = tester.widget<LinearProgressIndicator>(
-        find.byType(LinearProgressIndicator),
-      );
-      expect(bar.value, 0, reason: 'a static track, not a running controller');
+      // The pulse is still composed — it draws one fixed frame — but no
+      // controller is running behind it.
+      expect(find.byType(EntryPulse), findsOneWidget);
       expect(tester.hasRunningAnimations, isFalse);
+      expect(find.byKey(BrandMark.widgetKey), findsOneWidget);
     });
 
     testWidgets('and nothing when the device asks for reduced motion',
         (tester) async {
       await _pump(tester, const StartupPage(), disableAnimations: true);
-      expect(
-        tester
-            .widget<LinearProgressIndicator>(
-              find.byType(LinearProgressIndicator),
-            )
-            .value,
-        0,
-      );
+      expect(find.byType(EntryPulse), findsOneWidget);
       expect(tester.hasRunningAnimations, isFalse);
+      expect(find.byKey(BrandMark.widgetKey), findsOneWidget);
     });
 
     testWidgets('animates at the default level', (tester) async {
       // The other direction: the reduced form is a *response*, not the only
       // thing the screen can do.
       await _pump(tester, const StartupPage());
-      expect(
-        tester
-            .widget<LinearProgressIndicator>(
-              find.byType(LinearProgressIndicator),
-            )
-            .value,
-        isNull,
-      );
+      expect(tester.hasRunningAnimations, isTrue);
     });
   });
 }

@@ -47,6 +47,7 @@ after it is written. Keep it to the contract; the reasoning belongs in
 | 5 | Optimistic Concurrency & Stale-Write Resolution Contract | **Contract decided (Task 3)**; §5.4's store + write-on-classify wiring built by Task 4 (§7); §5.5's `useLocal` new-operation protocol implemented by the Task 4 corrective pass (§7) | 2 (both explicitly scoped out — see §5) |
 | 6 | Attendance Edit Window + Append-Only Corrections | Implemented (frontend/mock only) | 1 |
 | 7 | Needs Review inbox + durable conflict review foundation | Implemented (frontend only; no conflict can occur until a real transport exists) — corrected and completed by the Task 4 corrective pass | 1 |
+| 8 | Device-local settings + entry surface (**negative** contract: appearance, motion/frame rate, intro, EntryPulse, fixed mark) | Implemented, device-local only | 0 |
 
 ---
 
@@ -1934,3 +1935,77 @@ and no navigation from the automatic sync path. The Task 4 corrective pass
 **does** implement §5.5's `useLocal` resolution protocol in code — both were
 out of scope for the original Task 4 session but are explicitly in scope for
 the corrective pass; see "What changed in the corrective pass" above.
+
+---
+
+## §8 — Device-local settings and the entry surface (no backend boundary)
+
+### Feature
+
+Appearance (six palettes, Light/Dark/System, Eye Protection), performance
+(motion level, frame rate) and the entry visuals (the fixed Clean Layer
+launcher identity, the cold-launch intro, the EntryPulse ambience on `/startup`
+and `/login`).
+
+This section exists to record a **negative** contract: none of it crosses the
+frontend/backend boundary. It is written down because the absence of an
+endpoint is otherwise indistinguishable from an endpoint nobody got around to,
+and because `API_CONTRACT.md` did carry a stale `settings/motion-level` pair
+that a backend developer would reasonably have implemented.
+
+### The ruling
+
+**Device preference, not account state. No endpoint, no table, no sync, no
+outbox, no capability, no audit event.**
+
+| Preference | Durable local key | Values |
+| --- | --- | --- |
+| Appearance | `mtm.settings.theme` | `ThemeState.toJson()` — `palette` (`medical`, `slate`, `copper`, `clay`, `indigo`, `teal`), `mode` (light/dark/system), `eyeProtect` (bool) |
+| Motion level | `mtm.settings.motion` | `performance`, `low`, `balanced`, `high`, `maximum` |
+| Frame rate | `mtm.settings.frame_rate` | `auto`, `fps30`, `fps60`, `fps90`, `fps120` |
+
+All three are persisted by **name**, never by enum index, through the existing
+`LocalStore` behind `SettingsRepository`. Unknown or corrupt values fall back
+safely without clearing unrelated preferences. Defaults: Medical + Light,
+Eye Protection off, `balanced` motion (or `performance` when the OS reports
+`MediaQuery.disableAnimations` and nothing is stored), `auto` frame rate.
+
+`GET`/`PUT /api/v1/settings/motion-level` is **superseded** and must not be
+built; `API_CONTRACT.md` keeps the historical shape only so it is not
+re-derived.
+
+### Why device-local is the right boundary
+
+The same person's phone and tablet are different screens in different light. A
+server-owned appearance would push a choice made for one onto the other, and a
+server-owned performance level would push a choice made for a fast device onto
+a slow one — which is exactly backwards, since the setting exists to match the
+hardware it runs on. Neither is shared, neither is auditable, neither is worth
+a round trip on a screen that must paint before the session is even resolved.
+
+That last point is now load-bearing: `loadDeviceSettings`
+(`features/settings/data/device_settings_bootstrap.dart`) reads all three
+together in `main()` **before `runApp`**, so the intro and Login paint in the
+chosen appearance and performance rather than flashing a default and
+correcting. A network-owned preference could not be honoured there at all —
+there is no session yet, and at a cold launch there may be no network.
+
+### The entry surface carries no state
+
+The intro, the pulse, the fixed mark and the removed logo selector are
+**rendering**. There is no API for them, no feature flag, no server-controlled
+timing, no "has seen intro" field and no stored artwork choice. A `logo` key
+written by the brief window when the mark was selectable is read as nothing
+and costs nothing else. Do not let visual-only state into an auth, session or
+settings payload.
+
+### Backend responsibility
+
+None. If the product later decides these should follow the account, that is a
+new decision with its own section — not a gap to close quietly.
+
+### Explicitly out of scope (this section)
+
+Notification preferences (`GET`/`PUT /api/v1/settings/notifications`) and
+organization settings are genuine server state and are unaffected. The
+adaptive performance system is a later phase and does not exist.

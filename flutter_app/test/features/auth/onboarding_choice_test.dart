@@ -25,6 +25,8 @@ import 'package:mtm/features/auth/presentation/email_verification_page.dart';
 import 'package:mtm/features/auth/presentation/google_sign_in_button.dart';
 import 'package:mtm/l10n/strings.dart';
 
+import '../../entry_settle.dart';
+
 /// Point 18B — the final login/onboarding UX adjustments:
 ///
 /// - `/login` names its field for what it accepts (email only) and presents
@@ -57,6 +59,11 @@ void main() {
     final container = ProviderContainer(overrides: [
       authRepositoryProvider
           .overrideWithValue(MockAuthRepository(demoAccountsEnabled: false)),
+      // The development chooser stands in for the platform's own Google
+      // account picker, which a widget test has no way to open. It is off by
+      // default on a phone platform — see `googleDevelopmentChooserProvider`
+      // — so a test that drives a Google identity asks for it by name.
+      googleDevelopmentChooserProvider.overrideWithValue(true),
       if (demoPolicy != null)
         customerDemoPolicyProvider.overrideWithValue(demoPolicy),
     ]);
@@ -79,7 +86,7 @@ void main() {
         ),
       ),
     ));
-    await tester.pumpAndSettle();
+    await settleEntry(tester);
     return (container, router);
   }
 
@@ -92,15 +99,15 @@ void main() {
 
   Future<void> tapVisible(WidgetTester tester, Finder target) async {
     await tester.ensureVisible(target);
-    await tester.pumpAndSettle();
+    await settleEntry(tester);
     await tester.tap(target);
-    await tester.pumpAndSettle();
+    await settleEntry(tester);
   }
 
   Future<void> signUpAndVerify(
       WidgetTester tester, GoRouter router, String email) async {
     router.go('/signup');
-    await tester.pumpAndSettle();
+    await settleEntry(tester);
     await tester.enterText(find.byKey(const Key('signup-email')), email);
     await tester.enterText(
         find.byKey(const Key('signup-password')), 'a-good-password');
@@ -121,7 +128,7 @@ void main() {
       email,
     );
     await tester.tap(find.text(S.confirm));
-    await tester.pumpAndSettle();
+    await settleEntry(tester);
   }
 
   group('login presentation', () {
@@ -171,7 +178,7 @@ void main() {
           home: Center(child: GoogleGMark(size: 24)),
         ),
       );
-      await tester.pumpAndSettle();
+      await settleEntry(tester);
 
       final imageWidget = tester.widget<Image>(find.byType(Image));
       final provider = imageWidget.image as MemoryImage;
@@ -230,7 +237,7 @@ void main() {
         keyboard: 280,
       );
       await tester.ensureVisible(find.text(S.createAccount));
-      await tester.pumpAndSettle();
+      await settleEntry(tester);
       expect(tester.takeException(), isNull);
       expect(find.text(S.createAccount), findsOneWidget);
       expect(
@@ -270,7 +277,7 @@ void main() {
       expect(gateway.calls, 1, reason: 'a second tap starts no second sheet');
 
       gateway.complete(const GoogleSignInCancelled());
-      await tester.pumpAndSettle();
+      await settleEntry(tester);
       expect(attempts, [isA<GoogleSignInCancelled>()]);
       expect(find.text(S.continueWithGoogle), findsOneWidget);
     });
@@ -344,7 +351,7 @@ void main() {
 
       await tapVisible(tester, choiceDemo);
       await tester.pump(const Duration(seconds: 1));
-      await tester.pumpAndSettle();
+      await settleEntry(tester);
 
       // The trial is the real application, entered at its home.
       expect(at(router), '/home');
@@ -371,7 +378,7 @@ void main() {
       // Drain the mock's simulated latency inside the fake clock.
       await tester.pump(const Duration(seconds: 1));
       final again = await pending;
-      await tester.pumpAndSettle();
+      await settleEntry(tester);
       final outcome = again.when(
         success: (data, {stale = false}) => data,
         failure: (_, __) => null,
@@ -393,7 +400,7 @@ void main() {
       expect(find.text(S.customerDemoUnavailable), findsOneWidget);
       await tapVisible(tester, choiceDemo);
       await tester.pump(const Duration(seconds: 1));
-      await tester.pumpAndSettle();
+      await settleEntry(tester);
 
       expect(at(router), '/link-team');
       expect(container.read(currentUserProvider).valueOrNull, isNull);

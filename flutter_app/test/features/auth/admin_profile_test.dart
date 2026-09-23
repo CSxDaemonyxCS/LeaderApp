@@ -15,6 +15,8 @@ import 'package:mtm/features/auth/domain/auth_repository.dart';
 import 'package:mtm/features/auth/presentation/session_expired_page.dart';
 import 'package:mtm/features/settings/presentation/profile_page.dart';
 import 'package:mtm/l10n/strings.dart';
+
+import '../../entry_settle.dart';
 import 'package:mtm/main.dart';
 
 /// Point 5 — the administrator's own account screen.
@@ -365,7 +367,9 @@ void main() {
     final (router, _) = await _boot(tester, auth);
 
     await _signOut(tester);
-    await tester.pumpAndSettle();
+    // Bounded: the screen this lands on is the entry surface, which loops an
+    // ambient pulse for as long as it is up.
+    await settleEntry(tester);
 
     expect(auth.signOutCalls, 1);
     expect(_location(router), '/login');
@@ -373,13 +377,13 @@ void main() {
     // The account screen was on a preserved bottom-nav branch stack a moment
     // ago. Going back to it must not open it.
     router.go('/more/profile');
-    await tester.pumpAndSettle();
+    await settleEntry(tester);
     expect(_location(router), '/login');
     expect(find.byType(ProfilePage), findsNothing);
 
     // Nor may any other protected surface be reached.
     router.go('/detachment/d1/team');
-    await tester.pumpAndSettle();
+    await settleEntry(tester);
     expect(_location(router), '/login');
   });
 
@@ -417,7 +421,7 @@ void main() {
 
     // Let the one request that was actually made come back.
     await tester.pump(const Duration(seconds: 1));
-    await tester.pumpAndSettle();
+    await settleEntry(tester);
     expect(auth.signOutCalls, 1);
     expect(_location(router), '/login');
   });

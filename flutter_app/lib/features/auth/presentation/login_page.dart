@@ -1,37 +1,44 @@
-import '../../../core/widgets/reading_column.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/brand/brand_logo.dart';
 import '../../../core/motion/motion_tokens.dart';
 import '../../../core/result/result.dart';
 import '../../../core/startup/startup_destination.dart';
 import '../../../core/theme/theme_controller.dart';
 import '../../../core/widgets/made_in_iraq.dart';
+import '../../../core/widgets/reading_column.dart';
 import '../../../l10n/strings.dart';
 import '../data/auth_providers.dart';
 import '../data/google_identity_gateway.dart';
 import '../data/onboarding_controller.dart';
 import '../domain/onboarding_models.dart';
 import '../domain/onboarding_repository.dart';
+import 'entry_glass.dart';
 import 'google_sign_in_button.dart';
-import 'login_glass.dart';
 import 'onboarding_ui.dart';
 
 /// The product's front door.
 ///
-/// **The design is the green/glass Login.** Its ground, its accent and its
-/// one frosted panel all come out of the Clean Layer mark's own glass, so the
-/// first screen and the icon the user tapped to get here are visibly the same
-/// object. Every colour on it lives in [LoginGlass]; this file spells none.
+/// **It shares the launch screen's ground.** Every colour on it comes from
+/// [EntryGlass], the same teal-and-glass surface the Leader intro is painted
+/// on, so arriving here from a cold start reads as the mark dissolving into a
+/// form rather than as a second screen. This file spells no colour.
 ///
-/// **The mark is the one the user picked.** Login draws
-/// `themeStateProvider.logo` — the default until they change it in
-/// Settings → المظهر والأداء. The home-screen icon is fixed to Clean Layer
-/// for everyone and is not derived from this; see [BrandLogo].
+/// **The brand is said once, by the title.** The screen used to open with the
+/// mark, then «ليدر» under it, then «مرحباً بك في ليدر» under *that* — three
+/// statements of the same fact in the first 140 dp, before anything the
+/// person came here to do. The launcher icon and the intro have already shown
+/// the mark by the time this screen exists; the heading carries the name, and
+/// the space that bought goes to the form.
+///
+/// **Two zones, not one.** Who you are and what this is sit on the ground:
+/// the heading and one supporting line. What you *do* sits on the glass: two
+/// fields, the forgot link, the primary action, the rule and Google. A panel
+/// that opened with a paragraph made the reader work out where the form
+/// started; this way the panel *is* the form.
 ///
 /// **Nothing about entry changed.** Same controller, same password call, same
 /// Google gateway, same three outcomes handed to [_enter]. This screen is a
@@ -53,10 +60,9 @@ class LoginPage extends ConsumerStatefulWidget {
   /// everywhere else — a column of inputs has the same right width in a
   /// sign-up flow, a settings form or an edit sheet — so Phase 1 of the UI
   /// quality programme promoted it to [kFormMaxWidth] rather than leaving it
-  /// spelled here. The number and this screen's layout are unchanged; the
-  /// rest of the app can now inherit it. The screen's own *rhythm* (its 25 sp
-  /// title, its −0.4 tracking, its 13 and 18 px gaps) stays local: that is
-  /// composition for one panel, not a token.
+  /// spelled here. The screen's own *rhythm* (its 27 sp title, its −0.5
+  /// tracking, its 13 and 18 px gaps) stays local: that is composition for one
+  /// panel, not a token.
   static const double maxFormWidth = kFormMaxWidth;
 
   @override
@@ -80,8 +86,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   @override
   void initState() {
     super.initState();
-    // The two fields draw their own focus ring and accent border, so the
-    // screen has to rebuild when focus moves between them.
+    // The two fields draw their own focus ring, fill and accent border, so
+    // the screen has to rebuild when focus moves between them.
     _emailFocus.addListener(_onFocusChanged);
     _passwordFocus.addListener(_onFocusChanged);
     // The CTA is disabled until both fields have something in them, which
@@ -162,8 +168,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       case GoogleSignInCancelled():
         return;
       case GoogleSignInUnavailable():
-        setState(() =>
-            _error = onboardingErrorMessage(OnboardingErrorKind.googleRetry));
+        setState(() => _error =
+            onboardingErrorMessage(OnboardingErrorKind.googleUnavailable));
         return;
       case GoogleSignInNetworkFailure():
         setState(() => _offline = true);
@@ -196,7 +202,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       ThemeMode.dark => Brightness.dark,
       ThemeMode.system => media.platformBrightness,
     };
-    final glass = LoginGlass.resolve(brightness, eyeProtect: theme.eyeProtect);
+    final glass = EntryGlass.resolve(brightness, eyeProtect: theme.eyeProtect);
 
     final compact = media.size.width < LoginPage.compactWidth;
     final pad = compact ? 16.0 : 20.0;
@@ -215,8 +221,15 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       // The ground is the gradient below, not a flat colour; the scaffold's
       // own fill would only show for one frame behind it.
       backgroundColor: glass.baseMid,
-      body: LoginBackdrop(
+      body: EntryBackdrop(
         glass: glass,
+        // The wave rises through the heading and out past the panel, which is
+        // where the intro's last wave was heading when this screen took over.
+        pulseCenter: const Alignment(0, -0.22),
+        // The idle screen keeps its breathing pulse. While either field is
+        // active the painter holds its current frame, avoiding a full-screen
+        // background repaint under the glass blur on every keyboard frame.
+        pausePulse: _emailFocus.hasFocus || _passwordFocus.hasFocus,
         child: SafeArea(
           child: LayoutBuilder(
             builder: (context, box) {
@@ -242,32 +255,24 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const SizedBox(height: 14),
-                        _BrandBlock(logo: theme.logo, glass: glass),
-                        const SizedBox(height: 16),
-                        Text(
-                          S.loginTitle,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: glass.fg,
-                            fontSize: 25,
-                            height: 1.34,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.4,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        LoginGlassPanel(
+                        // A flexible opening gap rather than a fixed one: on
+                        // a tall phone the form sits optically centred, and
+                        // at 320 dp with 1.6× text it collapses to nothing
+                        // instead of pushing the CTA off the screen.
+                        const Spacer(flex: 2),
+                        _Masthead(glass: glass),
+                        const SizedBox(height: 22),
+                        EntryGlassPanel(
                           glass: glass,
                           padding: EdgeInsets.all(panelPad),
                           child: _form(glass, notice),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 16),
                         _signupRow(glass),
-                        const Spacer(),
+                        const Spacer(flex: 3),
                         MadeInIraqFooter(
                           color: glass.faint,
-                          padding: const EdgeInsets.only(top: 14, bottom: 26),
+                          padding: const EdgeInsets.only(top: 14, bottom: 22),
                         ),
                       ],
                     ),
@@ -281,34 +286,21 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
   }
 
-  Widget _form(LoginGlass glass, String? notice) {
+  Widget _form(EntryGlass glass, String? notice) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          S.loginSub,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: glass.muted,
-            fontSize: 14,
-            height: 1.6,
-          ),
-        ),
         if (notice != null) ...[
-          const SizedBox(height: 12),
-          Semantics(
-            liveRegion: true,
-            child: Text(
-              notice,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: glass.muted, fontSize: 13, height: 1.55),
-            ),
+          _Notice(
+            glass: glass,
+            icon: Icons.info_outline_rounded,
+            message: notice,
+            tone: _NoticeTone.quiet,
           ),
+          const SizedBox(height: 16),
         ],
-        const SizedBox(height: 18),
         LoginField(
-          key: const Key('login-email'),  // the labelled group
-
+          key: const Key('login-email'), // the labelled group
           glass: glass,
           label: S.emailLabel,
           controller: _email,
@@ -408,7 +400,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
   }
 
-  Widget _signupRow(LoginGlass glass) => Wrap(
+  Widget _signupRow(EntryGlass glass) => Wrap(
         alignment: WrapAlignment.center,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
@@ -419,7 +411,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           TextButton(
             onPressed: _locked ? null : () => context.push('/signup'),
             style: TextButton.styleFrom(
-              foregroundColor: glass.accent,
+              // `accentInk`, not `accent`: this is prose on the ground and
+              // has to clear 4.5:1 there. See [EntryGlass.accentInk].
+              foregroundColor: glass.accentInk,
               padding: const EdgeInsets.symmetric(horizontal: 8),
               minimumSize: const Size(48, 44),
             ),
@@ -435,54 +429,51 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       );
 }
 
-/// The mark and the wordmark, centred.
+/// «مرحباً بك في ليدر» and the one line under it.
 ///
-/// The artwork is already a rounded glass tile, so it sits bare with only a
-/// coloured glow beneath it — no plate, no ring, no tile inside a tile.
-class _BrandBlock extends StatelessWidget {
-  const _BrandBlock({required this.logo, required this.glass});
+/// The whole brand block on this screen. There is no mark and no separate
+/// wordmark: the launcher icon and the launch intro have both already shown
+/// the mark, and the heading carries the name. What replaces the lost visual
+/// weight is a short accent rule — the one piece of brand colour above the
+/// glass, and the thing that stops a bare heading from floating.
+class _Masthead extends StatelessWidget {
+  const _Masthead({required this.glass});
 
-  final BrandLogo logo;
-  final LoginGlass glass;
+  final EntryGlass glass;
 
   @override
   Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          DecoratedBox(
+          Container(
+            key: const Key('login-brand-rule'),
+            width: 44,
+            height: 3,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(17),
-              boxShadow: [
-                BoxShadow(
-                  color: glass.markGlow,
-                  blurRadius: 30,
-                  spreadRadius: -8,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: Image.asset(
-              logo.asset,
-              key: const Key('login-brand-mark'),
-              width: 72,
-              height: 68,
-              fit: BoxFit.contain,
-              filterQuality: FilterQuality.high,
-              isAntiAlias: true,
-              gaplessPlayback: true,
-              // The artwork carries the name; announcing it twice with the
-              // wordmark below would read it twice.
-              excludeFromSemantics: true,
+              color: glass.accent,
+              borderRadius: BorderRadius.circular(2),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 18),
           Text(
-            S.productNameAr,
+            S.loginTitle,
+            textAlign: TextAlign.center,
             style: TextStyle(
               color: glass.fg,
-              fontSize: 24,
-              height: 1.25,
+              fontSize: 27,
+              height: 1.32,
               fontWeight: FontWeight.w700,
-              letterSpacing: -0.3,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            S.loginSub,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: glass.muted,
+              fontSize: 14.5,
+              height: 1.55,
             ),
           ),
         ],
@@ -499,6 +490,11 @@ class _BrandBlock extends StatelessWidget {
 /// it — Arabic labels at 13.5sp do not survive being shrunk into a border —
 /// and it is merged into the field's semantics node so a screen reader
 /// announces the two as one control.
+///
+/// **Focus moves three things.** The border takes the accent, a 4dp ring
+/// appears, and the well itself brightens ([EntryGlass.fieldFocusFill]).
+/// Colour alone is never the signal, and on a frosted panel a border change
+/// alone is close to invisible.
 class LoginField extends StatelessWidget {
   const LoginField({
     super.key,
@@ -518,7 +514,7 @@ class LoginField extends StatelessWidget {
     this.trailing,
   });
 
-  final LoginGlass glass;
+  final EntryGlass glass;
   final String label;
   final TextEditingController controller;
   final FocusNode focusNode;
@@ -547,7 +543,6 @@ class LoginField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final focused = focusNode.hasFocus;
-    final dark = glass.baseMid.computeLuminance() < 0.5;
     return MergeSemantics(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -571,14 +566,13 @@ class LoginField extends StatelessWidget {
               end: trailing == null ? 15 : 5,
             ),
             decoration: BoxDecoration(
-              color: glass.fieldFill,
+              color: focused ? glass.fieldFocusFill : glass.fieldFill,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: focused ? glass.accent : glass.fieldBorder,
                 width: 1.5,
               ),
-              boxShadow:
-                  focused ? glass.focusRing(dark ? 0.26 : 0.18) : const [],
+              boxShadow: focused ? glass.focusRing : const [],
             ),
             child: Row(
               children: [
@@ -638,7 +632,7 @@ class _PasswordToggle extends StatelessWidget {
     required this.onChanged,
   });
 
-  final LoginGlass glass;
+  final EntryGlass glass;
   final bool obscured;
   final VoidCallback onChanged;
 
@@ -652,9 +646,7 @@ class _PasswordToggle extends StatelessWidget {
         color: glass.muted,
         tooltip: obscured ? S.showPassword : S.hidePassword,
         icon: Icon(
-          obscured
-              ? Icons.visibility_outlined
-              : Icons.visibility_off_outlined,
+          obscured ? Icons.visibility_outlined : Icons.visibility_off_outlined,
           semanticLabel: obscured ? S.showPassword : S.hidePassword,
         ),
       );
@@ -662,6 +654,15 @@ class _PasswordToggle extends StatelessWidget {
 
 /// «تسجيل الدخول». A `FilledButton` so it keeps the app's button semantics,
 /// with the glass palette painted over the theme's.
+///
+/// **It is the one lit object on the screen.** Everything else here is
+/// translucent or is ink; the primary action is solid accent with its own
+/// accent-tinted shadow under it. That is what makes it read as sitting *on*
+/// the glass rather than being another panel of it — and it is the difference
+/// between a screen that has a primary action and one that has six controls.
+/// The shadow is dropped while the button is disabled: an inert control that
+/// still casts light is the exact mixed signal a disabled state exists to
+/// avoid.
 class _PrimaryCta extends StatelessWidget {
   const _PrimaryCta({
     required this.glass,
@@ -669,53 +670,72 @@ class _PrimaryCta extends StatelessWidget {
     required this.onPressed,
   });
 
-  final LoginGlass glass;
+  final EntryGlass glass;
   final bool busy;
   final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton(
-      onPressed: busy ? null : onPressed,
-      style: FilledButton.styleFrom(
-        backgroundColor: glass.accent,
-        foregroundColor: glass.onAccent,
-        // Disabled is carried by fill *and* by the button reporting itself
-        // disabled, never by colour alone.
-        disabledBackgroundColor: glass.accent.withValues(alpha: 0.42),
-        disabledForegroundColor: glass.onAccent.withValues(alpha: 0.72),
-        minimumSize: const Size.fromHeight(54),
-        elevation: 0,
-        shadowColor: Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        // Size and weight only — the family comes from the button theme's
-        // own label style. Spelling a bare `TextStyle` here would drop
-        // `fontFamily` and render Arabic in the platform fallback.
-        textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
-              fontSize: 16.5,
-              height: 1.4,
-              fontWeight: FontWeight.w600,
-            ),
-      ),
-      child: busy
-          ? Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SizedBox(
-                  width: 17,
-                  height: 17,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.2,
-                    color: glass.onAccent,
-                  ),
+    final live = !busy && onPressed != null;
+    return AnimatedContainer(
+      duration: effectiveDuration(context, MotionTokens.short),
+      curve: effectiveCurve(context, MotionTokens.standard),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: live
+            ? [
+                BoxShadow(
+                  color: glass.ctaShadow,
+                  blurRadius: 22,
+                  spreadRadius: -6,
+                  offset: const Offset(0, 9),
                 ),
-                const SizedBox(width: 10),
-                const Text(S.signIn),
-              ],
-            )
-          : const Text(S.signIn),
+              ]
+            : const [],
+      ),
+      child: FilledButton(
+        onPressed: busy ? null : onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: glass.accent,
+          foregroundColor: glass.onAccent,
+          // Disabled is a pair of real colours, not the accent at an alpha —
+          // and it is carried by the fill, by the shadow going out, and by
+          // the button reporting itself disabled, never by colour alone.
+          disabledBackgroundColor: glass.ctaDisabled,
+          disabledForegroundColor: glass.onCtaDisabled,
+          minimumSize: const Size.fromHeight(54),
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          // Size and weight only — the family comes from the button theme's
+          // own label style. Spelling a bare `TextStyle` here would drop
+          // `fontFamily` and render Arabic in the platform fallback.
+          textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
+                fontSize: 16.5,
+                height: 1.4,
+                fontWeight: FontWeight.w700,
+              ),
+        ),
+        child: busy
+            ? Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 17,
+                    height: 17,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.2,
+                      color: glass.onAccent,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Text(S.signIn),
+                ],
+              )
+            : const Text(S.signIn),
+      ),
     );
   }
 }
@@ -724,7 +744,7 @@ class _PrimaryCta extends StatelessWidget {
 class _Divider extends StatelessWidget {
   const _Divider({required this.glass});
 
-  final LoginGlass glass;
+  final EntryGlass glass;
 
   @override
   Widget build(BuildContext context) => Row(
@@ -748,7 +768,8 @@ class _Divider extends StatelessWidget {
 
 enum _NoticeTone { danger, quiet }
 
-/// A refusal or an offline hold, said inside the panel.
+/// A refusal, an offline hold or a notice carried over from a previous
+/// session, said inside the panel.
 ///
 /// Tinted rather than given a surface of its own: inside glass, a second
 /// opaque card is one card too many, and the wash plus the glyph carry the
@@ -762,7 +783,7 @@ class _Notice extends StatelessWidget {
     required this.tone,
   });
 
-  final LoginGlass glass;
+  final EntryGlass glass;
   final IconData icon;
   final String message;
   final _NoticeTone tone;

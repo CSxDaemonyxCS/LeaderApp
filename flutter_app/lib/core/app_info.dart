@@ -50,19 +50,21 @@ abstract final class AppInfo {
   /// See `FRONTEND-BACKEND-INTEGRATION.md`.
   static const String clientVersionHeader = 'X-Client-Version';
 
-  /// The Leader mark for surfaces that draw it without a `WidgetRef` —
-  /// startup, the forced-upgrade screen and About.
+  /// The Leader mark — `06 · Clean Layer`.
   ///
-  /// The product **default**, not the user's pick: choosing a mark is a
-  /// preference and these three are either pre-preference (startup), a
-  /// blocked state that must not depend on a stored read (forced upgrade),
-  /// or a statement of what the product is (About). A screen that does have
-  /// the ref — Login — draws `themeStateProvider.logo` instead.
+  /// **The only one.** It is what the launch intro draws, what the
+  /// forced-upgrade screen and About draw, and the artwork the Android
+  /// launcher icon is generated from (`mipmap-anydpi-v26/ic_launcher.xml`).
+  /// It is not a preference and there is no second variant bundled: the two
+  /// alternates and the Settings picker that offered them were removed, for
+  /// the reasons written down in `core/brand/brand_mark.dart`.
   ///
-  /// It is also the artwork the Android launcher icon is generated from
-  /// (`mipmap-anydpi-v26/ic_launcher.xml`), which is fixed for everyone.
-  /// The legacy `assets/brand/mtm_logo_full.png` stays bundled but is no
-  /// longer drawn anywhere.
+  /// It lives on [AppInfo] because it is part of *this build's identity*, the
+  /// same as [version] — and it is the one place `assets/brand/...` is
+  /// spelled in `lib/`, which
+  /// `test/features/settings/brand_mark_test.dart` enforces. The legacy
+  /// `assets/brand/mtm_logo_full.png` stays bundled but is no longer drawn
+  /// anywhere.
   static const String logoAsset =
       'assets/brand/leader_logo_clean_layer.png';
 }

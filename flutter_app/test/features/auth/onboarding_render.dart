@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 import 'package:mtm/core/access/saas_tenant_status.dart';
 import 'package:mtm/core/motion/motion_level.dart';
 import 'package:mtm/core/router/app_router.dart';
+import 'package:mtm/core/startup/intro_gate.dart';
 import 'package:mtm/core/theme/app_palette.dart';
 import 'package:mtm/core/theme/app_theme.dart';
 import 'package:mtm/core/time/clock.dart';
@@ -22,7 +23,13 @@ import 'package:mtm/features/auth/data/mock_auth_repository.dart';
 import 'package:mtm/features/auth/data/mock_onboarding_repository.dart';
 import 'package:mtm/features/auth/data/onboarding_controller.dart';
 import 'package:mtm/features/auth/domain/customer_demo.dart';
+import 'package:mtm/core/display/frame_rate.dart';
+import 'package:mtm/core/result/result.dart';
+import 'package:mtm/core/theme/theme_controller.dart';
 import 'package:mtm/features/auth/presentation/login_page.dart';
+import 'package:mtm/features/settings/data/settings_providers.dart';
+import 'package:mtm/features/settings/domain/settings_models.dart';
+import 'package:mtm/features/settings/domain/settings_repository.dart';
 import 'package:mtm/l10n/strings.dart';
 
 /// Deliberate Point 17C visual-review harness. PNGs stay outside the
@@ -73,10 +80,19 @@ void main() {
     double keyboard = 0,
     bool eyeProtect = false,
     bool reduceMotion = false,
+    MotionLevel? motionLevel,
     GoogleSignInAttempt? google,
     bool pendingGoogle = false,
     bool demoAvailable = true,
+    bool intro = false,
+    Duration? holdAt,
   }) async {
+    // Arming the gate before the container is read is what a cold process
+    // launch does in `main()`; it is the only way to render the intro, since
+    // the router leaves `/startup` the moment the classifier can answer.
+    IntroGate.resetForTest();
+    if (intro) IntroGate.armColdLaunch();
+    addTearDown(IntroGate.resetForTest);
     now = DateTime.utc(2026, 9, 13, 9);
     online = true;
     tester.view.devicePixelRatio = 2;
@@ -87,6 +103,16 @@ void main() {
     final auth = MockAuthRepository(demoAccountsEnabled: false);
     final container = ProviderContainer(overrides: [
       authRepositoryProvider.overrideWithValue(auth),
+      // The entry surface resolves its own light/dark and eye-protect from
+      // the **stored theme**, not from `MaterialApp.themeMode` — so a shot
+      // that only set `themeMode` was rendering light and calling it dark.
+      // See FRONTEND-DESIGN-NOTES, "A render harness that cannot render the
+      // mode is not covering it".
+      settingsRepositoryProvider.overrideWithValue(_StoredTheme(ThemeState(
+        palette: palette,
+        mode: mode,
+        eyeProtect: eyeProtect,
+      ))),
       // Production appearance: no persona section, the real Google gateway.
       demoAccountsEnabledProvider.overrideWithValue(false),
       clockProvider.overrideWithValue(() => now),
@@ -123,26 +149,32 @@ void main() {
           child: Directionality(
             textDirection: TextDirection.rtl,
             child: MotionScope(
-              level:
-                  reduceMotion ? MotionLevel.performance : MotionLevel.balanced,
+              level: motionLevel ??
+                  (reduceMotion
+                      ? MotionLevel.performance
+                      : MotionLevel.balanced),
               child: child ?? const SizedBox.shrink(),
             ),
           ),
         ),
       ),
     ));
-    // Let the auth restore's simulated latency land before navigating; with
-    // reduced motion nothing animates to keep pumpAndSettle waiting for it.
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pumpAndSettle();
+    if (holdAt != null) {
+      // An exact instant, for a frame of a sequence that is still running.
+      await tester.pump();
+      await tester.pump(holdAt);
+      return router;
+    }
+    // Bounded, never `pumpAndSettle`: the entry surface loops its ambient
+    // pulse for as long as it is on screen. This also drains the auth
+    // restore's simulated latency.
+    await _settle(tester);
     return router;
   }
 
   Future<void> shot(WidgetTester tester, String name) async {
-    // Drain the mock repositories' simulated latency: with reduced motion a
-    // route change is instant, so pumpAndSettle alone can finish before it.
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pumpAndSettle();
+    // Drain the mock repositories' simulated latency, bounded.
+    await _settle(tester);
     expect(tester.takeException(), isNull, reason: '$name must fit');
     await expectLater(
       find.byType(MaterialApp),
@@ -150,18 +182,33 @@ void main() {
     );
   }
 
+  /// A frame exactly as it stands, with no further pumping. For the intro,
+  /// whose sequence is the thing being looked at.
+  Future<void> frame(WidgetTester tester, String name) async {
+    expect(tester.takeException(), isNull, reason: '$name must fit');
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('$outDir/$name.png'),
+    );
+    // Drain what the held frame left running — the gate's own ceiling and
+    // the caption's delay — so the tester's "no pending timer" invariant is
+    // met after a shot taken mid-sequence.
+    await tester.pump(IntroGate.ceiling + const Duration(seconds: 1));
+    await _settle(tester);
+  }
+
   Future<void> tapText(WidgetTester tester, String text) async {
     final target = find.text(text).last;
     await tester.ensureVisible(target);
-    await tester.pumpAndSettle();
+    await _settle(tester);
     await tester.tap(target);
-    await tester.pumpAndSettle();
+    await _settle(tester);
   }
 
   Future<void> type(WidgetTester tester, Finder field, String value) async {
     await tester.ensureVisible(field);
     await tester.enterText(field, value);
-    await tester.pumpAndSettle();
+    await _settle(tester);
   }
 
   // `AuthScaffold` screens label through the decoration; Login labels above
@@ -173,7 +220,7 @@ void main() {
   Future<void> signUp(WidgetTester tester, GoRouter router, String email,
       {String password = 'a-good-password'}) async {
     router.go('/signup');
-    await tester.pumpAndSettle();
+    await _settle(tester);
     await type(tester, find.byKey(const Key('signup-email')), email);
     await type(tester, find.byKey(const Key('signup-password')), password);
     await tapText(tester, S.signUpAction);
@@ -188,9 +235,9 @@ void main() {
   Future<void> chooseTeam(WidgetTester tester) async {
     final team = find.byKey(const Key('onboarding-choice-team'));
     await tester.ensureVisible(team);
-    await tester.pumpAndSettle();
+    await _settle(tester);
     await tester.tap(team);
-    await tester.pumpAndSettle();
+    await _settle(tester);
   }
 
   testWidgets('01 login 390 light', (tester) async {
@@ -335,7 +382,7 @@ void main() {
   testWidgets('17 signup eye protection, reduced motion', (tester) async {
     final router = await boot(tester, eyeProtect: true, reduceMotion: true);
     router.go('/signup');
-    await tester.pumpAndSettle();
+    await _settle(tester);
     await shot(tester, '17-signup-eye-protect');
   }, skip: outDir == null);
 
@@ -390,6 +437,146 @@ void main() {
         width: 320, height: 1400, textScale: 1.6, palette: PaletteId.teal);
     await shot(tester, '18-login-320-1.6x-teal');
   }, skip: outDir == null);
+
+  // ---- The entry redesign ------------------------------------------------
+  // Login on every ground it can be drawn on, and the launch sequence that
+  // hands over to it.
+
+  testWidgets('25 login 320 x1.6 light — the worst case', (tester) async {
+    await boot(tester, width: 320, height: 1400, textScale: 1.6);
+    await shot(tester, '25-login-320-1.6x-light');
+  }, skip: outDir == null);
+
+  testWidgets('26 login 600 tablet width', (tester) async {
+    await boot(tester, width: 600, height: 900);
+    await shot(tester, '26-login-600-light');
+  }, skip: outDir == null);
+
+  testWidgets('27 login eye protection, light', (tester) async {
+    await boot(tester, eyeProtect: true);
+    await shot(tester, '27-login-390-light-eye-protect');
+  }, skip: outDir == null);
+
+  testWidgets('28 login eye protection, dark', (tester) async {
+    await boot(tester, mode: ThemeMode.dark, eyeProtect: true);
+    await shot(tester, '28-login-390-dark-eye-protect');
+  }, skip: outDir == null);
+
+  testWidgets('29 login focused field + live CTA, dark', (tester) async {
+    await boot(tester, mode: ThemeMode.dark);
+    await type(tester, labelled(S.emailLabel), 'huda.alshammari@nabd.org');
+    await type(tester, labelled(S.passwordLabel), 'a-good-password');
+    await tester.tap(labelled(S.passwordLabel));
+    await shot(tester, '29-login-390-dark-focused');
+  }, skip: outDir == null);
+
+  testWidgets('30 login refusal, light', (tester) async {
+    await boot(tester);
+    await type(tester, labelled(S.emailLabel), 'someone@nabd.org');
+    await type(tester, labelled(S.passwordLabel), 'wrong-password');
+    await tapText(tester, S.signIn);
+    await shot(tester, '30-login-390-light-refused');
+  }, skip: outDir == null);
+
+  testWidgets('31 login keyboard open, 320', (tester) async {
+    await boot(tester, width: 320, height: 640, keyboard: 280);
+    await tester.tap(labelled(S.passwordLabel));
+    await shot(tester, '31-login-keyboard-320');
+  }, skip: outDir == null);
+
+  testWidgets('32 login reduced motion, light', (tester) async {
+    await boot(tester, reduceMotion: true);
+    await shot(tester, '32-login-390-reduced-motion');
+  }, skip: outDir == null);
+
+  for (final (index, label, at) in const [
+    (33, 'mark arriving', Duration(milliseconds: 260)),
+    (34, 'wave leaving', Duration(milliseconds: 700)),
+    (35, 'settled', Duration(milliseconds: 2500)),
+  ]) {
+    testWidgets('$index intro 390 dark — $label', (tester) async {
+      await boot(tester,
+          intro: true,
+          holdAt: at,
+          mode: ThemeMode.dark,
+          motionLevel: MotionLevel.high);
+      await frame(tester, '$index-intro-390-dark-${at.inMilliseconds}ms');
+    }, skip: outDir == null);
+  }
+
+  testWidgets('36 intro 390 light, mid-wave', (tester) async {
+    await boot(tester,
+        intro: true,
+        holdAt: const Duration(milliseconds: 820),
+        motionLevel: MotionLevel.high);
+    await frame(tester, '36-intro-390-light');
+  }, skip: outDir == null);
+
+  testWidgets('37 intro still waiting on a slow boot', (tester) async {
+    // Past the sequence and past the caption delay: the one state where the
+    // launch screen says anything at all.
+    await boot(tester,
+        intro: true,
+        holdAt: const Duration(milliseconds: 3200),
+        mode: ThemeMode.dark,
+        motionLevel: MotionLevel.high);
+    await frame(tester, '37-intro-390-dark-waiting');
+  }, skip: outDir == null);
+
+  testWidgets('38 intro 320 x1.6 eye protection', (tester) async {
+    await boot(tester,
+        intro: true,
+        holdAt: const Duration(milliseconds: 1200),
+        width: 320,
+        height: 640,
+        textScale: 1.6,
+        eyeProtect: true,
+        motionLevel: MotionLevel.high);
+    await frame(tester, '38-intro-320-1.6x-eye-protect');
+  }, skip: outDir == null);
+}
+
+/// Bounded pumps: the entry surface's ambient pulse never lets
+/// `pumpAndSettle` return.
+Future<void> _settle(WidgetTester tester) async {
+  await tester.pump();
+  for (var i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 400));
+  }
+}
+
+/// Serves one fixed appearance, instantly. The real `MockSettingsRepository`
+/// answers after a simulated delay, which is the wrong fixture for a shot.
+class _StoredTheme implements SettingsRepository {
+  _StoredTheme(this.theme);
+
+  final ThemeState theme;
+
+  @override
+  Future<Result<ThemeState?>> themePrefs() async => Success(theme);
+  @override
+  Future<Result<ThemeState>> updateThemePrefs(ThemeState prefs) async =>
+      Success(prefs);
+  @override
+  Future<Result<MotionLevel?>> motionLevel() async => const Success(null);
+  @override
+  Future<Result<MotionLevel>> updateMotionLevel(MotionLevel level) async =>
+      Success(level);
+  @override
+  Future<Result<FrameRatePreference?>> frameRate() async => const Success(null);
+  @override
+  Future<Result<FrameRatePreference>> updateFrameRate(
+          FrameRatePreference p) async =>
+      Success(p);
+  @override
+  Future<Result<NotificationPrefs>> notificationPrefs() async =>
+      throw UnimplementedError();
+  @override
+  Future<Result<NotificationPrefs>> updateNotificationPrefs(
+          NotificationPrefs p) async =>
+      throw UnimplementedError();
+  @override
+  Future<Result<OrgInfo>> orgInfo() async => throw UnimplementedError();
 }
 
 class _Fixed implements GoogleIdentityGateway {

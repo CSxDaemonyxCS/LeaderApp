@@ -193,6 +193,10 @@ void main() {
           .pumpWidget(_app(container, container.read(appRouterProvider)));
       await tester.pump(Duration.zero);
       await tester.pump();
+      // Past the route transition. Since the launch surface became the
+      // Leader intro it carries the Arabic wordmark, so an assertion taken
+      // mid-cross-fade sees the outgoing screen's copy as well as this one's.
+      await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.text(S.upgradeTitle), findsOneWidget);
       expect(find.text(S.productNameEn), findsOneWidget);
@@ -272,6 +276,7 @@ void main() {
           .pumpWidget(_app(container, container.read(appRouterProvider)));
       await tester.pump(Duration.zero);
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
 
       final arabicBrand = tester.widget<Text>(find.text(S.productNameAr));
       expect(arabicBrand.style?.letterSpacing, 0);

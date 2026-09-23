@@ -487,3 +487,40 @@ a shipping build — and never deleted by one either.
     token verification and backend-owned identity mapping; idempotency on every
     mutation; Audit for setup completion. Open policy is listed in HANDOFF
     "POINT 17A" §Q.
+
+16. **The seven live data dependencies (re-verified 2026-09-23).** These were
+    found during the UI quality programme and are recorded in
+    `UI-AUDIT-REPORT.md` as **BACKEND/DATA DEPENDENCY**. They are listed once,
+    here, so the backend developer does not have to reconstruct them from an
+    audit report. **None of them is a frontend defect**, none is masked, and no
+    screen claims data it does not have. Closing one by inventing client-side
+    data is explicitly refused.
+
+    1. **Cross-detachment Home attention / summary aggregation.**
+       `HomeRepository.summary(detachmentId)` is scoped to **one** detachment
+       by construction. A Home that speaks for the whole organisation needs a
+       truthful tenant- or organisation-level aggregate from the server; the
+       client cannot fan out over detachments it may not be granted.
+    2. **Statistics point dates / ranges.** The historical series on
+       `DetachmentStats` are bare integer lists. A chart cannot label an axis
+       it has no dates for. The contract should carry either date/range
+       metadata per point or one unambiguous, documented series interval.
+    3. **Historical inventory / stock unit.** Where a historical stock or count
+       series exists, the backend must define its **unit and semantic meaning**
+       (level at instant, movement over period, distinct items, …). The client
+       must not guess, and a number without a unit is not a statistic.
+    4. **`attendanceSeries` product semantics.** Undecided. No API data is to
+       be invented for it until the product says what it counts and over what
+       window.
+    5. **Historical roster-size trend.** Not available today in any form. If
+       the product wants it, it is a server-owned series — the client keeps no
+       roster history.
+    6. **Workshop payment mutation.** The register records and displays payment
+       state locally. That display establishes **no payment authority**. If
+       workshop payment becomes operational, the backend owns the authoritative
+       mutation, its audit and its money semantics.
+    7. **Real `.xlsx` export.** The UI is truthful: the button says «Excel
+       (CSV)» and writes CSV. Genuine `.xlsx` generation and delivery is future
+       backend/product work, not a label to change.
+
+    Readiness classification for all seven: `BACKEND-HANDOFF.md` §19.4.
